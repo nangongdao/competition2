@@ -1,27 +1,29 @@
 import React, { useEffect, useState } from 'react'
 
-import type { AppStatus, SubtitleMode } from '../types'
+import type { AppStatus, RevisionReason, SubtitleMode } from '../types'
 
 
 interface ControlPanelProps {
   status: AppStatus
   connectionState: string
   subtitleMode: SubtitleMode
+  subtitleHistoryCount: number
   translationRevisionCount: number
   asrRevisionCount: number
-  lastRevisionReason: 'asr_correction' | 'translation_correction' | null
+  lastRevisionReason: RevisionReason | null
   onStart: () => void
   onStop: () => void
   onManualRevise: () => void
+  onOpenHistory: () => void
   onSubtitleModeChange: (mode: SubtitleMode) => void
 }
 
 
 const STATUS_LABELS: Record<AppStatus, string> = {
-  idle: '就绪',
-  capturing: '正在采集音频',
-  translating: '正在翻译',
-  error: '错误',
+  idle: 'Ready',
+  capturing: 'Capturing audio',
+  translating: 'Live translation',
+  error: 'Action needed',
 }
 
 
@@ -34,33 +36,25 @@ const STATUS_COLORS: Record<AppStatus, string> = {
 
 
 const MODE_OPTIONS: Array<{ label: string; value: SubtitleMode }> = [
-  { label: '双语', value: 'bilingual' },
-  { label: '仅译文', value: 'translation_only' },
-  { label: '仅原文', value: 'source_only' },
+  { label: 'Both', value: 'bilingual' },
+  { label: 'Translation', value: 'translation_only' },
+  { label: 'Source', value: 'source_only' },
 ]
 
 
-const panelStyle: React.CSSProperties = {
-  position: 'fixed',
-  top: '16px',
-  right: '16px',
-  zIndex: 100000,
-  display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'stretch',
-  gap: '10px',
-  minWidth: '248px',
-  maxWidth: 'min(88vw, 280px)',
-  padding: '14px',
-  borderRadius: '16px',
-  background: 'rgba(12, 18, 28, 0.84)',
-  border: '1px solid rgba(255,255,255,0.08)',
-  backdropFilter: 'blur(14px)',
-  boxShadow: '0 16px 36px rgba(0, 0, 0, 0.26)',
+const REVISION_LABELS: Record<RevisionReason, string> = {
+  asr_correction: 'ASR',
+  translation_correction: 'Translation',
+}
+
+
+const tapSafeButtonStyle: React.CSSProperties = {
+  WebkitTapHighlightColor: 'transparent',
 }
 
 
 const primaryButtonStyle: React.CSSProperties = {
+  ...tapSafeButtonStyle,
   minHeight: '44px',
   border: 'none',
   borderRadius: '12px',
@@ -68,12 +62,12 @@ const primaryButtonStyle: React.CSSProperties = {
   fontSize: '14px',
   fontWeight: 700,
   color: '#fff',
-  WebkitTapHighlightColor: 'transparent',
 }
 
 
 const secondaryButtonStyle: React.CSSProperties = {
-  minHeight: '40px',
+  ...tapSafeButtonStyle,
+  minHeight: '44px',
   borderRadius: '12px',
   border: '1px solid rgba(255,255,255,0.14)',
   background: 'rgba(255,255,255,0.04)',
@@ -81,7 +75,21 @@ const secondaryButtonStyle: React.CSSProperties = {
   cursor: 'pointer',
   fontSize: '13px',
   fontWeight: 600,
-  WebkitTapHighlightColor: 'transparent',
+}
+
+
+const metricStyle: React.CSSProperties = {
+  minWidth: 0,
+  padding: '8px 10px',
+  borderRadius: '12px',
+  background: 'rgba(255,255,255,0.04)',
+  border: '1px solid rgba(255,255,255,0.06)',
+}
+
+
+const buttonClipStyle: React.CSSProperties = {
+  borderRadius: '12px',
+  overflow: 'hidden',
 }
 
 
@@ -89,15 +97,17 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   status,
   connectionState,
   subtitleMode,
+  subtitleHistoryCount,
   translationRevisionCount,
   asrRevisionCount,
   lastRevisionReason,
   onStart,
   onStop,
   onManualRevise,
+  onOpenHistory,
   onSubtitleModeChange,
 }) => {
-  const [showSettings, setShowSettings] = useState(false)
+  const [showDetails, setShowDetails] = useState(false)
   const isActive = status === 'capturing' || status === 'translating'
 
   useEffect(() => {
@@ -113,9 +123,10 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   }, [onManualRevise])
 
   return (
-    <div style={panelStyle}>
+    <aside aria-label="Live translation controls" className="live-control-panel">
       <div style={{ display: 'flex', alignItems: 'center', fontSize: '13px', color: '#d9e1eb' }}>
         <span
+          aria-hidden="true"
           style={{
             display: 'inline-block',
             width: '8px',
@@ -129,7 +140,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
       </div>
 
       <div style={{ fontSize: '11px', color: '#91a0b3' }}>
-        WS: {connectionState}
+        WebSocket: {connectionState}
       </div>
 
       <div
@@ -139,28 +150,14 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
           gap: '8px',
         }}
       >
-        <div
-          style={{
-            padding: '8px 10px',
-            borderRadius: '12px',
-            background: 'rgba(255,255,255,0.04)',
-            border: '1px solid rgba(255,255,255,0.06)',
-          }}
-        >
-          <div style={{ fontSize: '11px', color: '#91a0b3' }}>翻译修正</div>
+        <div style={metricStyle}>
+          <div style={{ fontSize: '11px', color: '#91a0b3' }}>Translation fixes</div>
           <div style={{ fontSize: '18px', fontWeight: 700, color: '#ffffff' }}>
             {translationRevisionCount}
           </div>
         </div>
-        <div
-          style={{
-            padding: '8px 10px',
-            borderRadius: '12px',
-            background: 'rgba(255,255,255,0.04)',
-            border: '1px solid rgba(255,255,255,0.06)',
-          }}
-        >
-          <div style={{ fontSize: '11px', color: '#91a0b3' }}>ASR 修正</div>
+        <div style={metricStyle}>
+          <div style={{ fontSize: '11px', color: '#91a0b3' }}>ASR fixes</div>
           <div style={{ fontSize: '18px', fontWeight: 700, color: '#ffffff' }}>
             {asrRevisionCount}
           </div>
@@ -168,15 +165,11 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
       </div>
 
       <div style={{ fontSize: '11px', color: '#91a0b3' }}>
-        最近修正: {lastRevisionReason === 'asr_correction'
-          ? 'ASR'
-          : lastRevisionReason === 'translation_correction'
-            ? '翻译'
-            : '暂无'}
+        Last fix: {lastRevisionReason ? REVISION_LABELS[lastRevisionReason] : 'None'}
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        <div style={{ borderRadius: '12px', overflow: 'hidden' }}>
+        <div style={buttonClipStyle}>
           <button
             type="button"
             style={{
@@ -186,11 +179,11 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             }}
             onClick={isActive ? onStop : onStart}
           >
-            {isActive ? '停止翻译' : '开始翻译'}
+            {isActive ? 'Stop translation' : 'Start translation'}
           </button>
         </div>
 
-        <div style={{ borderRadius: '12px', overflow: 'hidden' }}>
+        <div style={buttonClipStyle}>
           <button
             type="button"
             style={{
@@ -199,25 +192,43 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             }}
             onClick={onManualRevise}
           >
-            ↻ 修正一次
+            Revise now
+          </button>
+        </div>
+
+        <div style={buttonClipStyle}>
+          <button
+            type="button"
+            style={{
+              ...secondaryButtonStyle,
+              width: '100%',
+            }}
+            onClick={onOpenHistory}
+          >
+            History and export ({subtitleHistoryCount})
           </button>
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: '8px' }}>
+      <div className="control-mode-group">
         {MODE_OPTIONS.map((option) => {
           const isSelected = option.value === subtitleMode
           return (
             <div
               key={option.value}
-              style={{ flex: 1, borderRadius: '10px', overflow: 'hidden' }}
+              className="control-mode-option"
             >
               <button
                 type="button"
+                aria-pressed={isSelected}
                 style={{
                   ...secondaryButtonStyle,
                   width: '100%',
-                  minHeight: '36px',
+                  minHeight: '44px',
+                  padding: '0 6px',
+                  fontSize: '12px',
+                  lineHeight: 1.12,
+                  overflowWrap: 'anywhere',
                   background: isSelected ? 'rgba(74,163,255,0.18)' : 'rgba(255,255,255,0.03)',
                   borderColor: isSelected ? 'rgba(74,163,255,0.4)' : 'rgba(255,255,255,0.1)',
                   color: isSelected ? '#ffffff' : '#b9c5d3',
@@ -231,38 +242,41 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         })}
       </div>
 
-      <div style={{ borderRadius: '12px', overflow: 'hidden' }}>
+      <div style={buttonClipStyle}>
         <button
           type="button"
           style={{
             ...secondaryButtonStyle,
             width: '100%',
-            minHeight: '34px',
+            minHeight: '44px',
             fontSize: '12px',
           }}
-          onClick={() => setShowSettings((value) => !value)}
+          onClick={() => setShowDetails((value) => !value)}
         >
-          {showSettings ? '收起设置' : '展开设置'}
+          {showDetails ? 'Hide details' : 'Show details'}
         </button>
       </div>
 
-      {showSettings ? (
+      {showDetails ? (
         <div
           style={{
             display: 'flex',
             flexDirection: 'column',
+            alignItems: 'stretch',
             gap: '6px',
             padding: '10px 12px',
             borderRadius: '12px',
             background: 'rgba(255,255,255,0.04)',
             fontSize: '12px',
+            lineHeight: 1.42,
             color: '#b9c5d3',
           }}
         >
-          <div>快捷键：`Ctrl + R` 触发手动修正</div>
-          <div>推荐：演示时使用“双语”模式，便于观察修正前后差异</div>
+          <div>Shortcut: Ctrl+R triggers a manual revision check.</div>
+          <div>Silence after audio input also triggers one revision pass.</div>
+          <div>Use Both mode to compare source text and translation fixes.</div>
         </div>
       ) : null}
-    </div>
+    </aside>
   )
 }

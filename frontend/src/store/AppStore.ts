@@ -4,7 +4,9 @@ import { SubtitleRenderer } from '../subtitle/SubtitleRenderer'
 import { SubtitleStore } from '../subtitle/SubtitleStore'
 import type {
   AppStatus,
+  RevisionReason,
   ServerMessage,
+  SubtitleEntry,
   SubtitleMode,
 } from '../types'
 
@@ -15,7 +17,9 @@ export interface AppState {
   subtitleMode: SubtitleMode
   translationRevisionCount: number
   asrRevisionCount: number
-  lastRevisionReason: 'asr_correction' | 'translation_correction' | null
+  lastRevisionReason: RevisionReason | null
+  subtitleHistory: SubtitleEntry[]
+  transcriptText: string
 }
 
 
@@ -38,6 +42,8 @@ export class AppController {
     translationRevisionCount: 0,
     asrRevisionCount: 0,
     lastRevisionReason: null,
+    subtitleHistory: [],
+    transcriptText: '',
   }
 
   constructor() {
@@ -85,6 +91,7 @@ export class AppController {
   setSubtitleRenderer(renderer: SubtitleRenderer): void {
     this._subtitleRenderer = renderer
     this._subtitleRenderer.setMode(this._state.subtitleMode)
+    this._syncSubtitles()
   }
 
   async start(): Promise<void> {
@@ -110,6 +117,8 @@ export class AppController {
       translationRevisionCount: 0,
       asrRevisionCount: 0,
       lastRevisionReason: null,
+      subtitleHistory: [],
+      transcriptText: '',
     })
   }
 
@@ -148,9 +157,13 @@ export class AppController {
 
       case 'revision':
         if (message.reason === 'asr_correction' && message.source_text) {
-          this._subtitleStore.reviseSource(message.segment_id, message.source_text)
+          this._subtitleStore.reviseSource(
+            message.segment_id,
+            message.source_text,
+            message.reason,
+          )
         }
-        this._subtitleStore.reviseSubtitle(message.segment_id, message.new_text)
+        this._subtitleStore.reviseSubtitle(message.segment_id, message.new_text, message.reason)
         this._subtitleRenderer?.revise(message.segment_id, message.new_text)
         this._updateState({
           translationRevisionCount:
@@ -176,13 +189,19 @@ export class AppController {
   }
 
   private _syncSubtitles(): void {
-    if (!this._subtitleRenderer) {
-      return
+    if (this._subtitleRenderer) {
+      for (const entry of this._subtitleStore.subtitles) {
+        this._subtitleRenderer.render(entry)
+      }
     }
+    this._updateSubtitleSnapshot()
+  }
 
-    for (const entry of this._subtitleStore.subtitles) {
-      this._subtitleRenderer.render(entry)
-    }
+  private _updateSubtitleSnapshot(): void {
+    this._updateState({
+      subtitleHistory: [...this._subtitleStore.history],
+      transcriptText: this._subtitleStore.exportTranscript(),
+    })
   }
 
   private _updateState(partial: Partial<AppState>): void {

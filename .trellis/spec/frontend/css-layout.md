@@ -238,6 +238,52 @@ When implementing custom scroll behaviors:
 
 ## Responsive Design Patterns
 
+### Fixed Overlay Panels on Mobile
+
+Fixed desktop panels must define a separate compact layout before the panel can cover or clip primary content.
+
+**Contract**:
+- Desktop side panels may use `position: fixed` with `top` and `right`.
+- At the compact breakpoint, set both `left` and `right`, clear fixed width assumptions with `min-width: 0` and `max-width: none`, and cap panel height with internal scrolling.
+- Any centered empty state or intro content behind the panel must reserve vertical space or move below the panel.
+
+```css
+.control-panel {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  min-width: 252px;
+  max-width: min(88vw, 296px);
+}
+
+@media (max-width: 520px) {
+  .control-panel {
+    top: 12px;
+    right: 12px;
+    left: 12px;
+    min-width: 0;
+    max-width: none;
+    max-height: min(52dvh, 430px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .empty-state {
+    align-items: flex-start;
+    padding-top: calc(min(52dvh, 430px) + 40px);
+  }
+}
+```
+
+**Good/Base/Bad Cases**:
+- Good: panel bounding box stays inside the viewport and centered content does not intersect it at 390px and 320px widths.
+- Base: if the panel is taller than the compact max height, it scrolls internally while the page remains stable.
+- Bad: only using `max-width: 88vw` with a desktop `min-width`, because the panel can still crowd or cover mobile content.
+
+**Tests Required**:
+- Use a browser check to compare `getBoundingClientRect()` for the panel and the content it overlays.
+- Verify button text has `scrollWidth <= clientWidth` and touch targets have a bounding rect height of at least 44px.
+
 ### Mobile-First Approach
 
 ```typescript

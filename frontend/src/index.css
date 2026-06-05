@@ -26,8 +26,78 @@ body {
   touch-action: manipulation;
 }
 
+.live-control-panel {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 100000;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  min-width: 252px;
+  max-width: min(88vw, 296px);
+  min-height: 0;
+  padding: 14px;
+  border-radius: 16px;
+  overflow: hidden;
+  background: rgba(12, 18, 28, 0.84);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.26);
+}
+
+.control-mode-group {
+  display: flex;
+  gap: 8px;
+}
+
+.control-mode-option {
+  flex: 1 1 0;
+  min-width: 0;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.app-idle-prompt {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
 button,
 a,
 [role='button'] {
   -webkit-tap-highlight-color: transparent;
+}
+
+@media (max-width: 520px) {
+  .live-control-panel {
+    top: 12px;
+    right: 12px;
+    left: 12px;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+    max-height: min(52dvh, 430px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .app-idle-prompt {
+    align-items: flex-start;
+    padding: calc(min(52dvh, 430px) + 40px) 18px 24px;
+    overflow: hidden;
+  }
+}
+
+@media (max-width: 340px) {
+  .control-mode-group {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
 }

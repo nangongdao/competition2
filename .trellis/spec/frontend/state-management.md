@@ -321,6 +321,53 @@ export function SelectionProvider({ children }: { children: ReactNode }) {
 }
 ```
 
+## Durable UI Snapshots
+
+Use a separate durable snapshot when a UI has both a short-lived rendered view and a longer-lived export/history view. Do not use the visible DOM subset as the source of truth for exportable data.
+
+### Convention: Separate Visible Items From History
+
+**What**: Keep bounded visible state and full history state as separate fields in the domain store, then publish immutable snapshots to React state.
+
+**Why**: Renderers often trim visible items for readability. If export/history reads from the trimmed list, older entries silently disappear and revision metadata can be lost.
+
+**Example**:
+```typescript
+interface SubtitleState {
+  visible: SubtitleEntry[]
+  history: SubtitleEntry[]
+}
+
+class SubtitleStore {
+  private _visible: SubtitleEntry[] = []
+  private _history: SubtitleEntry[] = []
+
+  get visible(): SubtitleEntry[] {
+    return this._visible
+  }
+
+  get history(): SubtitleEntry[] {
+    return this._history
+  }
+
+  exportTranscript(): string {
+    return this._history
+      .filter((entry) => entry.sourceText || entry.translatedText)
+      .map((entry) => `${entry.sourceText}\n${entry.translatedText}`)
+      .join('\n\n')
+  }
+}
+```
+
+**Good/Base/Bad Cases**:
+- Good: append every subtitle entry to `history`, derive `visible` from the last N entries, and export from `history`.
+- Base: reset both `visible` and `history` when a session stops.
+- Bad: export from a renderer-managed DOM node or from a list that is trimmed for display.
+
+**Tests Required**:
+- Add or run checks that verify a trimmed visible list still leaves older entries in exported history.
+- Verify revision messages update both the displayed entry and the exported transcript metadata.
+
 ## State Debugging
 
 ### React Query DevTools

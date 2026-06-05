@@ -27,12 +27,14 @@ export interface TranslationTokenMessage {
   is_final: boolean
 }
 
+export type RevisionReason = 'asr_correction' | 'translation_correction'
+
 export interface RevisionMessage {
   type: 'revision'
   segment_id: string
   new_text: string
   source_text?: string
-  reason: 'asr_correction' | 'translation_correction'
+  reason: RevisionReason
 }
 
 export interface StatusMessage {
@@ -69,6 +71,8 @@ export interface SubtitleEntry {
   translatedText: string
   isPartial: boolean
   isRevised: boolean
+  revisionReason?: RevisionReason
+  revisedAt?: number
   timestamp: number
 }
 

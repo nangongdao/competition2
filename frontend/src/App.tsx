@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { SubtitleRenderer } from './subtitle/SubtitleRenderer'
 import { AppController, type AppState } from './store/AppStore'
 import { ControlPanel } from './ui/ControlPanel'
+import { SubtitleHistoryPanel } from './ui/SubtitleHistoryPanel'
 
 
 const controller = new AppController()
@@ -10,6 +11,7 @@ const controller = new AppController()
 
 const App: React.FC = () => {
   const [appState, setAppState] = useState<AppState>(controller.state)
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement | null>(null)
   const rendererRef = useRef<SubtitleRenderer | null>(null)
 
@@ -43,7 +45,7 @@ const App: React.FC = () => {
   const handleStart = (): void => {
     controller.start().catch((error: unknown) => {
       console.error('Start failed', error)
-      window.alert('启动失败，请确认已授予麦克风或系统音频权限。')
+      window.alert('Start failed. Check microphone, tab audio, or system audio permissions.')
     })
   }
 
@@ -63,39 +65,46 @@ const App: React.FC = () => {
         status={appState.status}
         connectionState={appState.connectionState}
         subtitleMode={appState.subtitleMode}
+        subtitleHistoryCount={appState.subtitleHistory.length}
         translationRevisionCount={appState.translationRevisionCount}
         asrRevisionCount={appState.asrRevisionCount}
         lastRevisionReason={appState.lastRevisionReason}
         onStart={handleStart}
         onStop={() => controller.stop()}
         onManualRevise={() => controller.requestManualRevision()}
+        onOpenHistory={() => setIsHistoryOpen(true)}
         onSubtitleModeChange={(mode) => controller.setSubtitleMode(mode)}
       />
 
+      <SubtitleHistoryPanel
+        entries={appState.subtitleHistory}
+        isOpen={isHistoryOpen}
+        transcriptText={appState.transcriptText}
+        onClose={() => setIsHistoryOpen(false)}
+      />
+
       {appState.status === 'idle' ? (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            pointerEvents: 'none',
-          }}
-        >
+        <div className="app-idle-prompt">
           <div
             style={{
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
               gap: '10px',
+              maxWidth: 'min(88vw, 520px)',
+              padding: '0 24px',
               textAlign: 'center',
               color: '#95a3b5',
             }}
           >
-            <div style={{ fontSize: '48px' }}>🎙️</div>
-            <div style={{ fontSize: '20px', color: '#e6edf6' }}>AI 同声传译助手</div>
-            <div style={{ fontSize: '13px' }}>点击右上角开始翻译，暂停后会自动触发一次静默修正。</div>
+            <div style={{ fontSize: '42px', lineHeight: 1 }}>AI</div>
+            <div style={{ fontSize: '20px', color: '#e6edf6', fontWeight: 700 }}>
+              Live Interpreter
+            </div>
+            <div style={{ fontSize: '13px', lineHeight: 1.5 }}>
+              Start translation from the control panel. Pauses in audio trigger an automatic
+              revision pass, and history stays available for export.
+            </div>
           </div>
         </div>
       ) : null}
