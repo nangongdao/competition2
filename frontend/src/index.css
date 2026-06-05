@@ -1,0 +1,33 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+html {
+  background:
+    radial-gradient(circle at top, rgba(46, 88, 132, 0.2), transparent 42%),
+    linear-gradient(180deg, #0a0f16 0%, #121a25 100%);
+}
+
+body {
+  overflow: hidden;
+  font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  color: #fff;
+  background: transparent;
+  touch-action: manipulation;
+}
+
+button,
+a,
+[role='button'] {
+  -webkit-tap-highlight-color: transparent;
+}
