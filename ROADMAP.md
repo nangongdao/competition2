@@ -6,6 +6,42 @@
 
 ---
 
+## Current Progress Snapshot - 2026-06-05
+
+This roadmap has started moving from documentation into an implemented V2 slice.
+
+Completed in the current iteration:
+
+- Manual revision trigger from the frontend control panel to the backend pipeline.
+- Silence-based backend revision checks while preserving the sentence-count trigger.
+- Bilingual subtitle data model and rendering path.
+- Revision counters and last-revision metadata in the control panel.
+- Durable subtitle history that is separate from the visible subtitle list.
+- Subtitle history panel with transcript copy and TXT download.
+- English UI copy for the main live-translation controls.
+- Mobile control-panel layout fixes for narrow screens, including overflow and touch-target checks.
+- Trellis frontend specs updated for durable UI snapshots and fixed overlay panels on mobile.
+
+Validated with:
+
+- `npm.cmd run build`
+- `.\\backend\\.venv\\Scripts\\python.exe -m unittest backend.test_revision_service`
+- `git diff --check`
+- Playwright viewport checks for desktop, mobile, and narrow mobile layouts
+
+## Next Development Direction
+
+The next roadmap slice should focus on turning correction from a translation-only product demo into a more reliable production feature:
+
+1. Implement real `asr_correction` by caching audio around low-confidence segments and re-decoding with Whisper or an equivalent ASR path.
+2. Add revision-cost controls: cache translated windows, avoid repeated calls for unchanged context, and expose revision latency/cost counters.
+3. Expand export formats from TXT transcript to SRT/VTT subtitles and Markdown study notes.
+4. Add long-session reliability tests for 30-60 minute runs, including memory growth, subtitle ordering, and WebSocket recovery.
+5. Add Chinese TTS playback only after subtitle and correction stability are measurable.
+6. Defer desktop/system-audio capture until the browser MVP has stable metrics and export coverage.
+
+---
+
 ## 目录
 
 - [产品目标与完成标准](#产品目标与完成标准)

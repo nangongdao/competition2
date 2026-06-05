@@ -16,13 +16,13 @@ Ship a concrete V2 upgrade slice from `ROADMAP.md` that improves the product's l
 
 ## Acceptance Criteria
 
-* [ ] Clicking a manual revise control sends a control message to the backend and triggers revision checks without requiring a new finalized sentence.
-* [ ] When audio pauses for the configured silence window, the backend attempts a revision check once.
-* [ ] Existing periodic revision checks based on finalized sentence count still work.
-* [ ] Subtitle entries retain both source and translated text and can render in bilingual mode.
-* [ ] Revision messages update the translated line for the affected subtitle entry without breaking rendering.
-* [ ] Interactive controls use explicit tap-highlight suppression and preserve rounded-corner visuals on mobile WebKit.
-* [ ] Frontend layout changes follow explicit stretch/min-height patterns so they remain robust across build environments.
+* [x] Clicking a manual revise control sends a control message to the backend and triggers revision checks without requiring a new finalized sentence.
+* [x] When audio pauses for the configured silence window, the backend attempts a revision check once.
+* [x] Existing periodic revision checks based on finalized sentence count still work.
+* [x] Subtitle entries retain both source and translated text and can render in bilingual mode.
+* [x] Revision messages update the translated line for the affected subtitle entry without breaking rendering.
+* [x] Interactive controls use explicit tap-highlight suppression and preserve rounded-corner visuals on mobile WebKit.
+* [x] Frontend layout changes follow explicit stretch/min-height patterns so they remain robust across build environments.
 
 ## Definition Of Done
 
@@ -81,3 +81,21 @@ Implement the smallest coherent V2 slice:
   * `frontend/src/ui/ControlPanel.tsx`
   * `frontend/src/subtitle/SubtitleStore.ts`
   * `frontend/src/subtitle/SubtitleRenderer.ts`
+
+## Progress Update - 2026-06-05
+
+The planned V2 slice has been implemented and verified. In addition to the original acceptance criteria, the iteration added a durable subtitle history panel, transcript copy/download, English control-panel copy, and mobile overlay hardening.
+
+Validation completed:
+
+* `npm.cmd run build` from `frontend`
+* `.\\backend\\.venv\\Scripts\\python.exe -m unittest backend.test_revision_service`
+* `git diff --check`
+* Playwright visual and DOM checks for desktop, mobile, and narrow mobile viewports
+
+Follow-up roadmap direction:
+
+* Implement real ASR correction using cached audio and re-decode instead of relying only on translation-window revision.
+* Add revision-cost and latency metrics before broadening correction triggers.
+* Expand export from TXT transcript to SRT/VTT and Markdown notes.
+* Run long-session stability checks before desktop/system-audio capture work.
