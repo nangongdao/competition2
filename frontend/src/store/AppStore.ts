@@ -24,7 +24,6 @@ export interface AppState {
   clientDiagnostics: ClientDiagnostics
   diagnosticsText: string
   subtitleHistory: SubtitleEntry[]
-  transcriptText: string
 }
 
 
@@ -61,7 +60,6 @@ export class AppController {
     clientDiagnostics: EMPTY_CLIENT_DIAGNOSTICS,
     diagnosticsText: formatDiagnosticsText(EMPTY_CLIENT_DIAGNOSTICS, null),
     subtitleHistory: [],
-    transcriptText: '',
   }
 
   constructor() {
@@ -150,7 +148,6 @@ export class AppController {
       clientDiagnostics: this._wsClient.diagnostics,
       diagnosticsText: formatDiagnosticsText(this._wsClient.diagnostics, null),
       subtitleHistory: [],
-      transcriptText: '',
     })
   }
 
@@ -242,7 +239,6 @@ export class AppController {
   private _updateSubtitleSnapshot(): void {
     this._updateState({
       subtitleHistory: [...this._subtitleStore.history],
-      transcriptText: this._subtitleStore.exportTranscript(),
     })
   }
 

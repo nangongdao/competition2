@@ -81,7 +81,6 @@ const App: React.FC = () => {
       <SubtitleHistoryPanel
         entries={appState.subtitleHistory}
         isOpen={isHistoryOpen}
-        transcriptText={appState.transcriptText}
         diagnosticsText={appState.diagnosticsText}
         onClose={() => setIsHistoryOpen(false)}
       />

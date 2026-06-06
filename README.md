@@ -4,7 +4,7 @@ AI real-time interpretation assistant for translating one-way foreign-language a
 
 ## Current Status
 
-The project is on branch `feat/roadmap-big-question-upgrades`.
+The current documented baseline is an implemented V2 product slice.
 
 Implemented product capabilities now include:
 
@@ -18,6 +18,8 @@ Implemented product capabilities now include:
 - Reconnect-safe frontend session IDs with per-session ASR stream state and revision cache isolation.
 - Durable subtitle history separated from the short visible subtitle list.
 - Transcript copy and TXT download from the subtitle history panel.
+- SRT subtitle export, VTT subtitle export, and Markdown learning-note export from
+  subtitle history.
 - Diagnostics TXT download from the subtitle history panel.
 - Responsive control panel behavior for desktop, mobile, and narrow mobile widths.
 
@@ -31,12 +33,13 @@ Recent validation:
 
 ## Next Direction
 
-Recommended follow-up iterations:
+Recommended improvement sequence:
 
-1. Run true 30-60 minute live endurance tests with Redis, Whisper, and provider API keys.
-2. Expand transcript export to SRT/VTT and Markdown learning notes.
-3. Add Chinese TTS playback for translated output.
-4. Explore desktop/system-audio capture after browser flow is stable.
+1. Establish a real reliability baseline with 30-60 minute live endurance runs using Redis, Whisper, and provider API keys. Track queue drops, reconnects, subtitle ordering, memory growth, ASR latency, translation latency, revision latency, and API-call counts.
+2. Validate post-session artifacts in real sessions: confirm SRT/VTT timing, revised-segment markers, Markdown note readability, and unchanged TXT/diagnostics behavior.
+3. Harden browser audio capture by migrating from `ScriptProcessorNode` to `AudioWorklet`, then compare chunk stability and latency before and after the migration.
+4. Add Chinese TTS playback only after the reliability and export baselines are stable. The TTS slice should include playback queueing, volume control, and a clear strategy for revised subtitles.
+5. Defer desktop/system-audio capture until the browser workflow has measurable stability. At that point, evaluate Tauri or Electron against real capture, packaging, and memory requirements.
 
 ## Iteration Workflow
 

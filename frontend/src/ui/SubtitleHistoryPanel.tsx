@@ -1,12 +1,18 @@
 import React, { useEffect, useMemo, useState } from 'react'
 
+import {
+  formatLearningNotesMarkdown,
+  formatPlainTranscript,
+  formatSrtSubtitles,
+  formatVttSubtitles,
+  hasExportableSubtitles,
+} from '../subtitle/subtitle-export'
 import type { SubtitleEntry } from '../types'
 
 
 interface SubtitleHistoryPanelProps {
   entries: SubtitleEntry[]
   isOpen: boolean
-  transcriptText: string
   diagnosticsText: string
   onClose: () => void
 }
@@ -83,7 +89,6 @@ const footerStyle: React.CSSProperties = {
 export const SubtitleHistoryPanel: React.FC<SubtitleHistoryPanelProps> = ({
   entries,
   isOpen,
-  transcriptText,
   diagnosticsText,
   onClose,
 }) => {
@@ -133,7 +138,7 @@ export const SubtitleHistoryPanel: React.FC<SubtitleHistoryPanelProps> = ({
   }
 
   const recentEntries = entries.slice(-30).reverse()
-  const canExport = transcriptText.trim().length > 0
+  const canExport = hasExportableSubtitles(entries)
   const canExportDiagnostics = diagnosticsText.trim().length > 0
 
   const handleCopy = async (): Promise<void> => {
@@ -141,6 +146,7 @@ export const SubtitleHistoryPanel: React.FC<SubtitleHistoryPanelProps> = ({
       return
     }
 
+    const transcriptText = formatPlainTranscript(entries)
     try {
       await navigator.clipboard.writeText(transcriptText)
       setCopyStatus('copied')
@@ -151,21 +157,52 @@ export const SubtitleHistoryPanel: React.FC<SubtitleHistoryPanelProps> = ({
     }
   }
 
-  const handleDownload = (): void => {
+  const handleDownloadTranscript = (): void => {
     if (!canExport) {
       return
     }
 
-    const blob = new Blob([transcriptText], { type: 'text/plain;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `ai-interpreter-transcript-${Date.now()}.txt`
-    link.style.display = 'none'
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    URL.revokeObjectURL(url)
+    downloadTextFile(
+      formatPlainTranscript(entries),
+      `ai-interpreter-transcript-${Date.now()}.txt`,
+      'text/plain;charset=utf-8',
+    )
+  }
+
+  const handleDownloadSrt = (): void => {
+    if (!canExport) {
+      return
+    }
+
+    downloadTextFile(
+      formatSrtSubtitles(entries),
+      `ai-interpreter-subtitles-${Date.now()}.srt`,
+      'application/x-subrip;charset=utf-8',
+    )
+  }
+
+  const handleDownloadVtt = (): void => {
+    if (!canExport) {
+      return
+    }
+
+    downloadTextFile(
+      formatVttSubtitles(entries),
+      `ai-interpreter-subtitles-${Date.now()}.vtt`,
+      'text/vtt;charset=utf-8',
+    )
+  }
+
+  const handleDownloadNotes = (): void => {
+    if (!canExport) {
+      return
+    }
+
+    downloadTextFile(
+      formatLearningNotesMarkdown(entries),
+      `ai-interpreter-notes-${Date.now()}.md`,
+      'text/markdown;charset=utf-8',
+    )
   }
 
   const handleDownloadDiagnostics = (): void => {
@@ -173,16 +210,11 @@ export const SubtitleHistoryPanel: React.FC<SubtitleHistoryPanelProps> = ({
       return
     }
 
-    const blob = new Blob([diagnosticsText], { type: 'text/plain;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `ai-interpreter-diagnostics-${Date.now()}.txt`
-    link.style.display = 'none'
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    URL.revokeObjectURL(url)
+    downloadTextFile(
+      diagnosticsText,
+      `ai-interpreter-diagnostics-${Date.now()}.txt`,
+      'text/plain;charset=utf-8',
+    )
   }
 
   return (
@@ -320,11 +352,26 @@ export const SubtitleHistoryPanel: React.FC<SubtitleHistoryPanelProps> = ({
               color: canExport ? '#10141b' : '#718093',
               cursor: canExport ? 'pointer' : 'not-allowed',
             }}
-            onClick={handleDownload}
+            onClick={handleDownloadTranscript}
           >
             Download TXT
           </button>
         </div>
+        <ExportButton
+          label="Download SRT"
+          disabled={!canExport}
+          onClick={handleDownloadSrt}
+        />
+        <ExportButton
+          label="Download VTT"
+          disabled={!canExport}
+          onClick={handleDownloadVtt}
+        />
+        <ExportButton
+          label="Notes MD"
+          disabled={!canExport}
+          onClick={handleDownloadNotes}
+        />
         <div style={{ gridColumn: '1 / -1', borderRadius: '12px', overflow: 'hidden' }}>
           <button
             type="button"
@@ -371,10 +418,53 @@ const SummaryStat: React.FC<SummaryStatProps> = ({ label, value }) => (
 )
 
 
+interface ExportButtonProps {
+  label: string
+  disabled: boolean
+  onClick: () => void
+}
+
+
+const ExportButton: React.FC<ExportButtonProps> = ({ label, disabled, onClick }) => (
+  <div style={{ borderRadius: '12px', overflow: 'hidden' }}>
+    <button
+      type="button"
+      disabled={disabled}
+      style={{
+        ...tapSafeButtonStyle,
+        width: '100%',
+        minHeight: '44px',
+        background: disabled ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.08)',
+        color: disabled ? '#718093' : '#d9e1eb',
+        border: '1px solid rgba(255,255,255,0.1)',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+      }}
+      onClick={onClick}
+    >
+      {label}
+    </button>
+  </div>
+)
+
+
 function formatTime(timestamp: number): string {
   return new Date(timestamp).toLocaleTimeString([], {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
   })
+}
+
+
+function downloadTextFile(content: string, filename: string, mimeType: string): void {
+  const blob = new Blob([content], { type: mimeType })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.style.display = 'none'
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
 }

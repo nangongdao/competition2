@@ -6,39 +6,53 @@
 
 ---
 
-## Current Progress Snapshot - 2026-06-05
+## Current Progress Snapshot - 2026-06-06
 
-This roadmap has started moving from documentation into an implemented V2 slice.
+This roadmap has moved from an MVP plan into an implemented V2 product slice. The next work should now focus on measured reliability, export validation, and audio-capture hardening before adding larger surface-area features.
 
-Completed in the current iteration:
+Implemented capabilities now include:
 
 - Manual revision trigger from the frontend control panel to the backend pipeline.
 - Silence-based backend revision checks while preserving the sentence-count trigger.
 - Bilingual subtitle data model and rendering path.
 - Revision counters and last-revision metadata in the control panel.
+- Real low-confidence ASR correction through cached segment audio, Whisper re-decode, and LLM post-edit fallback.
+- Revision-cost controls through translation-window caching, unchanged-context skips, and API-call counters.
+- Live session diagnostics for latency, dropped chunks, reconnects, revision counters, revision sources, revision triggers, and API-call counters.
+- Reconnect-safe frontend session IDs with per-session ASR stream state and revision cache isolation.
 - Durable subtitle history that is separate from the visible subtitle list.
 - Subtitle history panel with transcript copy and TXT download.
+- SRT subtitle export, VTT subtitle export, and Markdown learning-note export from subtitle history.
+- Diagnostics TXT download from the subtitle history panel.
 - English UI copy for the main live-translation controls.
 - Mobile control-panel layout fixes for narrow screens, including overflow and touch-target checks.
 - Trellis frontend specs updated for durable UI snapshots and fixed overlay panels on mobile.
 
-Validated with:
+Most recent recorded validation:
 
 - `npm.cmd run build`
-- `.\\backend\\.venv\\Scripts\\python.exe -m unittest backend.test_revision_service`
+- `.\\backend\\.venv\\Scripts\\python.exe -m unittest discover backend`
+- `.\\backend\\.venv\\Scripts\\python.exe -m compileall backend\\api backend\\core backend\\models backend\\services backend\\storage`
 - `git diff --check`
 - Playwright viewport checks for desktop, mobile, and narrow mobile layouts
 
-## Next Development Direction
+Known gaps after the implemented slice:
 
-The next roadmap slice should focus on turning correction from a translation-only product demo into a more reliable production feature:
+- The project still needs a true 30-60 minute live endurance run with Redis, Whisper, and provider API keys.
+- Export coverage now includes TXT transcript, SRT subtitles, VTT subtitles, Markdown learning notes, and diagnostics downloads; the new artifact formats still need real-session timing and readability validation.
+- Browser audio capture still uses `ScriptProcessorNode`, so the AudioWorklet migration remains a near-term technical-debt item.
+- Chinese TTS playback and desktop/system-audio capture remain intentionally deferred until the browser flow has measurable stability.
 
-1. Implement real `asr_correction` by caching audio around low-confidence segments and re-decoding with Whisper or an equivalent ASR path.
-2. Add revision-cost controls: cache translated windows, avoid repeated calls for unchanged context, and expose revision latency/cost counters.
-3. Expand export formats from TXT transcript to SRT/VTT subtitles and Markdown study notes.
-4. Add long-session reliability tests for 30-60 minute runs, including memory growth, subtitle ordering, and WebSocket recovery.
-5. Add Chinese TTS playback only after subtitle and correction stability are measurable.
-6. Defer desktop/system-audio capture until the browser MVP has stable metrics and export coverage.
+## Priority Improvement Directions - 2026-06-06
+
+The next roadmap slice should make the existing V2 workflow measurable and dependable before expanding the product surface.
+
+1. **Reliability and observability baseline**: run 30-60 minute live sessions and record queue drops, reconnects, subtitle ordering, memory growth, ASR latency, translation latency, revision latency, revision sources, and API-call counts.
+2. **Export validation and artifact refinement**: validate SRT/VTT timing, revised-segment markers, Markdown note readability, and unchanged TXT/diagnostics behavior in real sessions.
+3. **Browser audio-capture hardening**: migrate the frontend capture path from `ScriptProcessorNode` to `AudioWorklet`, then compare chunk stability, dropped chunks, and latency against the current implementation.
+4. **Chinese TTS playback**: add TTS after reliability and export baselines are stable. The first TTS slice should include playback queueing, volume control, latency tracking, and correction handling for already-spoken subtitles.
+5. **Desktop/system-audio capture**: defer until the browser workflow is stable. Evaluate Tauri or Electron using real requirements for system-audio capture, packaging size, memory usage, and cross-platform support.
+6. **Later expansion**: keep multi-language input, glossary support, and learning-assistant features behind the reliability/export/TTS work so core live interpretation quality remains the priority.
 
 ---
 
@@ -270,13 +284,13 @@ The next roadmap slice should focus on turning correction from a translation-onl
 
 按投入产出比，推荐后续开发顺序如下：
 
-1. 真正的 Whisper 二次解码 ASR 纠错
-2. 字幕历史与导出
-3. TTS 中文语音播报
-4. 桌面端系统音频采集
-5. 长时稳定性和延迟优化
-6. 测试体系与指标监控
-7. 多语言与学习辅助能力
+1. 长时稳定性、延迟和资源占用基线验证
+2. 导出产物真实会话校验与格式优化
+3. 浏览器音频采集从 ScriptProcessorNode 迁移到 AudioWorklet
+4. TTS 中文语音播报
+5. 桌面端系统音频采集
+6. 自动化测试体系与指标监控补强
+7. 多语言、术语库与学习辅助能力
 
 ---
 
@@ -286,11 +300,13 @@ The next roadmap slice should focus on turning correction from a translation-onl
 
 ### V2.1 修正引擎生产化
 
-**当前状态**: `RevisionService` 已实现基本框架（编辑距离对比 + 窗口重译），但存在以下问题：
-1. 每次修正检查重新调用 LLM API，成本高、延迟大
-2. 编辑距离对比在中文字符级可能不准确（语义相同但表述不同的翻译也会触发修正）
-3. 修正触发策略过于简单（仅按句子数量计数）
-4. ASR 纠错路径未实现（`reason: "asr_correction"` 只在消息类型中定义但从未产生）
+**Updated status (2026-06-06)**: the core revision-production slice is implemented. `RevisionService` now includes translation-window caching, unchanged-context skips, semantic-ambiguity triggers, API-call counters, and real `asr_correction` through cached audio re-decode with LLM post-edit fallback. The implementation notes below are retained as historical design context; future work should treat them as completed unless validation reveals a regression.
+
+Remaining productionization work:
+1. Run 30-60 minute live sessions with Redis, Whisper, and provider API keys.
+2. Establish latency, API-call, and revision-quality thresholds from real sessions.
+3. Add broader tests around reconnect recovery, queue overflow, subtitle ordering, and revision idempotency.
+4. Use the captured metrics to decide whether additional cache tuning or trigger throttling is needed.
 
 #### V2.1.1 修正触发策略升级
 
