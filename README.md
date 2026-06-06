@@ -30,7 +30,10 @@ Implemented product capabilities now include:
 - Diagnostics TXT download from the subtitle history panel.
 - Optional local Chinese voice playback through the browser/Electron Web Speech
   API, with queueing, volume control, rate control, and diagnostics.
-- Frontend unit tests for local TTS queue behavior and subtitle export formats.
+- Frontend unit tests for AudioWorklet capture startup, ScriptProcessor fallback,
+  failed-capture cleanup, local TTS queue behavior, and subtitle export formats.
+- Backend unit tests for pipeline queue overflow diagnostics, final ASR-to-translation
+  flow, and closed-session audio rejection.
 - Responsive control panel behavior for desktop, mobile, and narrow mobile widths.
 
 Recent validation:
@@ -38,6 +41,7 @@ Recent validation:
 - `npm.cmd run test` in `frontend`.
 - `npm.cmd run build` in `frontend`.
 - `npm.cmd audit` in `frontend`.
+- `.\\backend\\.venv\\Scripts\\python.exe -m unittest backend.test_pipeline`.
 - `python -m unittest backend.test_endurance_runner`.
 - `python -m compileall tools backend/test_endurance_runner.py`.
 - `.\\backend\\.venv\\Scripts\\python.exe -m unittest discover backend`.

@@ -32,7 +32,8 @@ Implemented capabilities now include:
 - SRT subtitle export, VTT subtitle export, and Markdown learning-note export from subtitle history.
 - Diagnostics TXT download from the subtitle history panel.
 - Optional local Chinese voice playback through the browser/Electron Web Speech API, with queueing, volume control, rate control, revision-aware skip/update behavior, and diagnostics.
-- Frontend unit tests for local TTS queue behavior, TTS numeric guardrails, and TXT/SRT/VTT/Markdown subtitle export formatting.
+- Frontend unit tests for AudioWorklet capture startup, ScriptProcessor fallback, failed-capture cleanup, local TTS queue behavior, TTS numeric guardrails, and TXT/SRT/VTT/Markdown subtitle export formatting.
+- Backend unit tests for pipeline queue overflow diagnostics, final ASR-to-translation flow, and closed-session audio rejection.
 - English UI copy for the main live-translation controls.
 - Mobile control-panel layout fixes for narrow screens, including overflow and touch-target checks.
 - Trellis frontend specs updated for durable UI snapshots and fixed overlay panels on mobile.
@@ -42,6 +43,7 @@ Most recent recorded validation:
 - `npm.cmd run build`
 - `npm.cmd run test`
 - `npm.cmd audit`
+- `.\\backend\\.venv\\Scripts\\python.exe -m unittest backend.test_pipeline`
 - `python -m unittest backend.test_endurance_runner`
 - `python -m compileall tools backend/test_endurance_runner.py`
 - `.\\backend\\.venv\\Scripts\\python.exe -m unittest discover backend`
@@ -54,7 +56,7 @@ Known gaps after the implemented slice:
 
 - The project now has a local endurance runner with queue-depth and received-ratio thresholds, but still needs a true 30-60 minute live run with Redis, Whisper, and provider API keys.
 - Export coverage now includes TXT transcript, SRT subtitles, VTT subtitles, Markdown learning notes, diagnostics downloads, and unit tests for the formatter outputs; the new artifact formats still need real-session timing and readability validation.
-- Browser audio capture now defaults to `AudioWorklet`, and diagnostics show the active backend; the new path still needs real-session comparison against the ScriptProcessor fallback for chunk stability, dropped chunks, and latency.
+- Browser audio capture now defaults to `AudioWorklet`, diagnostics show the active backend, and unit tests cover main-path startup, fallback, and failed-capture cleanup; the path still needs real-session comparison against the ScriptProcessor fallback for chunk stability, dropped chunks, and latency.
 - Production-grade/provider-backed Chinese TTS playback and full desktop/system-audio capture remain intentionally deferred until the browser flow has measurable stability. The current local voice path is browser/Electron Web Speech playback, and the current desktop launcher is a local startup experience with tray and shortcut support, not a packaged system-audio capture client.
 
 ## Priority Improvement Directions - 2026-06-06

@@ -202,6 +202,13 @@ export type AudioCaptureBackend = 'audio-worklet' | 'script-processor'
 
 #### 6. Tests Required
 
+- Unit test `AudioCapture` behavior where browser APIs can be mocked:
+  - AudioWorklet startup reports `audio-worklet` and flushes only validated
+    `Float32Array` worklet messages
+  - worklet module load failure falls back to `ScriptProcessorNode` and preserves
+    the same `onAudioChunk(ArrayBuffer)` callback contract
+  - missing shared-audio tracks emit `error`, clear the active backend, and stop
+    tracks obtained from `getDisplayMedia`
 - Run the frontend production build after changing capture code.
 - Verify unsupported or failed worklet loading falls back to `ScriptProcessorNode`.
 - In a real browser session, compare AudioWorklet and fallback diagnostics for

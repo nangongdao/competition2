@@ -180,6 +180,13 @@ Latency keys:
   - audio queue depth, maximum depth, capacity, and wait-latency summaries are preserved
   - latency summaries expose `count`, `avg_ms`, and `max_ms`
   - API/revision counters are emitted as plain objects
+- Unit test `Pipeline` with fake ASR/NMT/context services:
+  - queue overflow emits `AUDIO_QUEUE_FULL`, increments received/dropped counters,
+    and preserves queue capacity plus maximum observed depth
+  - a final ASR segment emits translation tokens, persists cached segment audio,
+    updates the context segment, and records queue wait/capture/translation latency
+  - `stop()` resets ASR session state, closes the context session, emits closed
+    diagnostics, and ignores later audio chunks
 - Revision tests must keep passing after per-session revision counters are added.
 - Frontend build must pass after adding `SessionDiagnosticsMessage`, `ClientDiagnostics`, and diagnostics export UI.
 - For future integration tests:

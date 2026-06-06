@@ -13,10 +13,7 @@ const AUDIO_CONFIG = {
   channelCount: 1,
   chunkDurationMs: 100,
   bufferSize: 2048,
-  workletModuleUrl: new URL(
-    `${import.meta.env.BASE_URL}audio-capture-worklet.js`,
-    window.location.href,
-  ).toString(),
+  workletModuleUrl: resolveAudioWorkletModuleUrl(),
 } as const
 
 const WORKLET_PROCESSOR_NAME = 'audio-capture-processor'
@@ -280,4 +277,12 @@ function parseAudioWorkletChunkMessage(data: unknown): AudioWorkletChunkMessage 
     type: WORKLET_MESSAGE_TYPE,
     samples: message.samples,
   }
+}
+
+function resolveAudioWorkletModuleUrl(): string {
+  const baseUrl = import.meta.env?.BASE_URL ?? '/'
+  const currentLocation =
+    typeof window === 'undefined' ? 'http://localhost/' : window.location.href
+
+  return new URL(`${baseUrl}audio-capture-worklet.js`, currentLocation).toString()
 }
