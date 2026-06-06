@@ -69,6 +69,10 @@ export class SubtitleStore {
     this._notify()
   }
 
+  getEntry(segmentId: string): SubtitleEntry | undefined {
+    return this._findEntry(segmentId)
+  }
+
   reviseSubtitle(
     segmentId: string,
     newText: string,

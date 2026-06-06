@@ -71,11 +71,16 @@ const App: React.FC = () => {
         lastRevisionReason={appState.lastRevisionReason}
         serverDiagnostics={appState.serverDiagnostics}
         clientDiagnostics={appState.clientDiagnostics}
+        ttsSettings={appState.ttsSettings}
+        ttsDiagnostics={appState.ttsDiagnostics}
         onStart={handleStart}
         onStop={() => controller.stop()}
         onManualRevise={() => controller.requestManualRevision()}
         onOpenHistory={() => setIsHistoryOpen(true)}
         onSubtitleModeChange={(mode) => controller.setSubtitleMode(mode)}
+        onTtsEnabledChange={(enabled) => controller.setTtsEnabled(enabled)}
+        onTtsVolumeChange={(volume) => controller.setTtsVolume(volume)}
+        onTtsRateChange={(rate) => controller.setTtsRate(rate)}
       />
 
       <SubtitleHistoryPanel

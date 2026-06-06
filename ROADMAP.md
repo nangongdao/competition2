@@ -30,6 +30,7 @@ Implemented capabilities now include:
 - Subtitle history panel with transcript copy and TXT download.
 - SRT subtitle export, VTT subtitle export, and Markdown learning-note export from subtitle history.
 - Diagnostics TXT download from the subtitle history panel.
+- Optional local Chinese voice playback through the browser/Electron Web Speech API, with queueing, volume control, rate control, revision-aware skip/update behavior, and diagnostics.
 - English UI copy for the main live-translation controls.
 - Mobile control-panel layout fixes for narrow screens, including overflow and touch-target checks.
 - Trellis frontend specs updated for durable UI snapshots and fixed overlay panels on mobile.
@@ -49,16 +50,16 @@ Known gaps after the implemented slice:
 - The project now has a local endurance runner, but still needs a true 30-60 minute live run with Redis, Whisper, and provider API keys.
 - Export coverage now includes TXT transcript, SRT subtitles, VTT subtitles, Markdown learning notes, and diagnostics downloads; the new artifact formats still need real-session timing and readability validation.
 - Browser audio capture now defaults to `AudioWorklet`, and diagnostics show the active backend; the new path still needs real-session comparison against the ScriptProcessor fallback for chunk stability, dropped chunks, and latency.
-- Chinese TTS playback and full desktop/system-audio capture remain intentionally deferred until the browser flow has measurable stability. The current desktop launcher is a local startup experience with tray and shortcut support, not a packaged system-audio capture client.
+- Production-grade/provider-backed Chinese TTS playback and full desktop/system-audio capture remain intentionally deferred until the browser flow has measurable stability. The current local voice path is browser/Electron Web Speech playback, and the current desktop launcher is a local startup experience with tray and shortcut support, not a packaged system-audio capture client.
 
 ## Priority Improvement Directions - 2026-06-06
 
 The next roadmap slice should make the existing V2 workflow measurable and dependable before expanding the product surface.
 
-1. **Reliability and observability baseline**: run 30-60 minute live sessions with `tools/endurance_runner.py` and record queue drops, reconnects, subtitle ordering, memory growth, ASR latency, translation latency, revision latency, revision sources, and API-call counts.
+1. **Reliability and observability baseline**: run 30-60 minute live sessions with `tools/endurance_runner.py` and record client-to-backend received ratio, queue drops, reconnects, subtitle ordering, memory growth, ASR latency, translation latency, revision latency, revision sources, and API-call counts.
 2. **Export validation and artifact refinement**: validate SRT/VTT timing, revised-segment markers, Markdown note readability, and unchanged TXT/diagnostics behavior in real sessions.
 3. **Browser audio-capture validation**: validate the AudioWorklet capture path in real sessions and compare the recorded capture backend, chunk stability, dropped chunks, and latency against the ScriptProcessor fallback.
-4. **Chinese TTS playback**: add TTS after reliability and export baselines are stable. The first TTS slice should include playback queueing, volume control, latency tracking, and correction handling for already-spoken subtitles.
+4. **Chinese TTS playback**: validate the local Web Speech TTS slice in real sessions, including queue behavior, revised-segment handling, browser/Electron voice availability, and whether provider-backed synthesis is needed for consistent output.
 5. **Desktop/system-audio capture**: keep the Electron desktop launcher for demos, but defer full desktop/system-audio capture until the browser workflow is stable. Evaluate Electron/Tauri using real requirements for system-audio capture, packaging size, memory usage, and cross-platform support.
 6. **Later expansion**: keep multi-language input, glossary support, and learning-assistant features behind the reliability/export/TTS work so core live interpretation quality remains the priority.
 

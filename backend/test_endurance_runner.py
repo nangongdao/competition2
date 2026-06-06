@@ -116,6 +116,7 @@ class EnduranceRunnerTests(unittest.TestCase):
         self.assertIsInstance(summary, dict)
         self.assertEqual(summary["backend_audio_chunks_received"], 3)
         self.assertEqual(summary["backend_audio_chunks_dropped"], 1)
+        self.assertEqual(summary["backend_received_ratio"], 1.0)
         self.assertEqual(summary["reconnect_count"], 0)
 
     def test_validate_thresholds_raises_for_dropped_chunks(self) -> None:
@@ -134,6 +135,28 @@ class EnduranceRunnerTests(unittest.TestCase):
                     max_dropped_chunks=1,
                     max_reconnects=None,
                     max_latency_ms=None,
+                    min_received_ratio=None,
+                ),
+            )
+
+    def test_validate_thresholds_raises_for_low_received_ratio(self) -> None:
+        report = {
+            "summary": {
+                "backend_audio_chunks_dropped": 0,
+                "backend_received_ratio": 0.75,
+                "reconnect_count": 0,
+                "latency": {},
+            },
+        }
+
+        with self.assertRaises(EnduranceRunnerError):
+            validate_thresholds(
+                report,
+                Thresholds(
+                    max_dropped_chunks=None,
+                    max_reconnects=None,
+                    max_latency_ms=None,
+                    min_received_ratio=0.95,
                 ),
             )
 
@@ -155,6 +178,7 @@ def make_config() -> RunnerConfig:
             max_dropped_chunks=None,
             max_reconnects=None,
             max_latency_ms=None,
+            min_received_ratio=None,
         ),
     )
 

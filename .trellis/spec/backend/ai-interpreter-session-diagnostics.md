@@ -233,7 +233,8 @@ CLI:
 python tools/endurance_runner.py \
   --duration-seconds 1800 \
   --url ws://localhost:8000/api/v1/ws/translate \
-  --output reports/endurance-30m.json
+  --output reports/endurance-30m.json \
+  --min-received-ratio 0.99
 ```
 
 Core report helpers:
@@ -262,7 +263,7 @@ def validate_thresholds(report: dict[str, object], thresholds: Thresholds) -> No
   - server error messages
   - latest `session_diagnostics`
   - a summary of backend received/dropped chunks, segment counts, reconnects,
-    and latency stats
+    received/sent chunk ratio, and latency stats
 
 ### 4. Validation & Error Matrix
 
@@ -276,6 +277,7 @@ def validate_thresholds(report: dict[str, object], thresholds: Thresholds) -> No
 | WebSocket closes during the run | Stop receiving and write the report from collected data |
 | Dropped chunks exceed configured threshold | Raise a runner error and exit non-zero |
 | Reconnects exceed configured threshold | Raise a runner error and exit non-zero |
+| Backend received/sent chunk ratio is below configured threshold | Raise a runner error and exit non-zero |
 | Average latency exceeds configured threshold | Raise a runner error and exit non-zero |
 
 ### 5. Good/Base/Bad Cases
@@ -292,7 +294,8 @@ def validate_thresholds(report: dict[str, object], thresholds: Thresholds) -> No
 ### 6. Tests Required
 
 - Unit tests for URL construction, PCM conversion, WAV looping, message
-  recording, report summarization, and threshold failures.
+  recording, report summarization, received-ratio calculation, and threshold
+  failures.
 - `python -m unittest backend.test_endurance_runner`
 - `python -m compileall tools backend/test_endurance_runner.py`
 - A real reliability baseline still requires a live backend with Redis, Whisper,

@@ -27,6 +27,8 @@ Implemented product capabilities now include:
 - SRT subtitle export, VTT subtitle export, and Markdown learning-note export from
   subtitle history.
 - Diagnostics TXT download from the subtitle history panel.
+- Optional local Chinese voice playback through the browser/Electron Web Speech
+  API, with queueing, volume control, rate control, and diagnostics.
 - Responsive control panel behavior for desktop, mobile, and narrow mobile widths.
 
 Recent validation:
@@ -46,7 +48,7 @@ Recommended improvement sequence:
 1. Establish a real reliability baseline with 30-60 minute live endurance runs using Redis, Whisper, provider API keys, and `tools/endurance_runner.py`. Track queue drops, reconnects, subtitle ordering, memory growth, ASR latency, translation latency, revision latency, and API-call counts.
 2. Validate post-session artifacts in real sessions: confirm SRT/VTT timing, revised-segment markers, Markdown note readability, and unchanged TXT/diagnostics behavior.
 3. Validate the new AudioWorklet capture path in real sessions and compare chunk stability, dropped chunks, and latency against the ScriptProcessor fallback.
-4. Add Chinese TTS playback only after the reliability and export baselines are stable. The TTS slice should include playback queueing, volume control, and a clear strategy for revised subtitles.
+4. Validate the local Web Speech voice playback in real browser/Electron sessions, then decide whether the next TTS slice needs provider-backed synthesis, audio artifact caching, or backend delivery.
 5. Keep the Electron desktop launcher for local demos, but defer full packaged desktop/system-audio capture until the browser workflow has measurable stability. At that point, evaluate Electron/Tauri capture, packaging, and memory requirements against real sessions.
 
 ## Desktop-Style Startup
@@ -76,7 +78,7 @@ Run the backend, then use the local endurance runner to send paced 16 kHz mono
 float32 PCM chunks and capture a diagnostics report:
 
 ```bash
-python tools/endurance_runner.py --duration-seconds 1800 --source silence --output reports/endurance-30m.json --max-dropped-chunks 0
+python tools/endurance_runner.py --duration-seconds 1800 --source silence --output reports/endurance-30m.json --max-dropped-chunks 0 --min-received-ratio 0.99
 ```
 
 For speech-like validation, provide a 16 kHz mono PCM WAV file:

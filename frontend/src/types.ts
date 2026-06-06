@@ -106,6 +106,23 @@ export type SubtitleMode = 'bilingual' | 'translation_only' | 'source_only'
 
 export type AudioCaptureBackend = 'audio-worklet' | 'script-processor'
 
+export interface TtsSettings {
+  enabled: boolean
+  volume: number
+  rate: number
+}
+
+export interface TtsDiagnostics {
+  isSupported: boolean
+  enabled: boolean
+  isSpeaking: boolean
+  queueLength: number
+  spokenUtterances: number
+  skippedUtterances: number
+  failedUtterances: number
+  lastError: string | null
+}
+
 export interface SubtitleEntry {
   segmentId: string
   sourceText: string

@@ -6,6 +6,8 @@ import type {
   RevisionReason,
   SessionDiagnostics,
   SubtitleMode,
+  TtsDiagnostics,
+  TtsSettings,
 } from '../types'
 
 
@@ -19,11 +21,16 @@ interface ControlPanelProps {
   lastRevisionReason: RevisionReason | null
   serverDiagnostics: SessionDiagnostics | null
   clientDiagnostics: ClientDiagnostics
+  ttsSettings: TtsSettings
+  ttsDiagnostics: TtsDiagnostics
   onStart: () => void
   onStop: () => void
   onManualRevise: () => void
   onOpenHistory: () => void
   onSubtitleModeChange: (mode: SubtitleMode) => void
+  onTtsEnabledChange: (enabled: boolean) => void
+  onTtsVolumeChange: (volume: number) => void
+  onTtsRateChange: (rate: number) => void
 }
 
 
@@ -111,14 +118,20 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   lastRevisionReason,
   serverDiagnostics,
   clientDiagnostics,
+  ttsSettings,
+  ttsDiagnostics,
   onStart,
   onStop,
   onManualRevise,
   onOpenHistory,
   onSubtitleModeChange,
+  onTtsEnabledChange,
+  onTtsVolumeChange,
+  onTtsRateChange,
 }) => {
   const [showDetails, setShowDetails] = useState(false)
   const isActive = status === 'capturing' || status === 'translating'
+  const canUseTts = ttsDiagnostics.isSupported
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -220,6 +233,63 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         </div>
       </div>
 
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px',
+          padding: '10px',
+          borderRadius: '12px',
+          background: 'rgba(255,255,255,0.04)',
+          border: '1px solid rgba(255,255,255,0.07)',
+        }}
+      >
+        <div style={buttonClipStyle}>
+          <button
+            type="button"
+            aria-pressed={ttsSettings.enabled}
+            disabled={!canUseTts}
+            style={{
+              ...secondaryButtonStyle,
+              width: '100%',
+              background: ttsSettings.enabled ? 'rgba(74,163,255,0.18)' : 'rgba(255,255,255,0.04)',
+              borderColor: ttsSettings.enabled ? 'rgba(74,163,255,0.4)' : 'rgba(255,255,255,0.1)',
+              color: canUseTts ? '#ffffff' : '#718093',
+              cursor: canUseTts ? 'pointer' : 'not-allowed',
+            }}
+            onClick={() => onTtsEnabledChange(!ttsSettings.enabled)}
+          >
+            {canUseTts ? (ttsSettings.enabled ? 'Voice on' : 'Voice off') : 'Voice unavailable'}
+          </button>
+        </div>
+
+        <VoiceSlider
+          label="Volume"
+          value={ttsSettings.volume}
+          min={0}
+          max={1}
+          step={0.05}
+          disabled={!canUseTts}
+          displayValue={`${Math.round(ttsSettings.volume * 100)}%`}
+          onChange={onTtsVolumeChange}
+        />
+
+        <VoiceSlider
+          label="Rate"
+          value={ttsSettings.rate}
+          min={0.7}
+          max={1.35}
+          step={0.05}
+          disabled={!canUseTts}
+          displayValue={`${ttsSettings.rate.toFixed(2)}x`}
+          onChange={onTtsRateChange}
+        />
+
+        <div style={{ color: '#91a0b3', fontSize: '11px' }}>
+          Voice: {ttsDiagnostics.isSpeaking ? 'speaking' : 'idle'} / queue {ttsDiagnostics.queueLength}
+        </div>
+      </div>
+
       <div className="control-mode-group">
         {MODE_OPTIONS.map((option) => {
           const isSelected = option.value === subtitleMode
@@ -284,6 +354,9 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         >
           <DetailRow label="Session" value={serverDiagnostics?.session_id ?? clientDiagnostics.sessionId} />
           <DetailRow label="Capture" value={formatCaptureBackend(clientDiagnostics.captureBackend)} />
+          <DetailRow label="Voice" value={formatVoiceStatus(ttsDiagnostics)} />
+          <DetailRow label="Voice queue" value={ttsDiagnostics.queueLength.toString()} />
+          <DetailRow label="Voice errors" value={ttsDiagnostics.failedUtterances.toString()} />
           <DetailRow label="Sent chunks" value={clientDiagnostics.sentAudioChunks.toString()} />
           <DetailRow label="Client drops" value={clientDiagnostics.droppedAudioChunks.toString()} />
           <DetailRow label="Server drops" value={(serverDiagnostics?.audio_chunks_dropped ?? 0).toString()} />
@@ -315,6 +388,59 @@ interface DetailRowProps {
   label: string
   value: string
 }
+
+
+interface VoiceSliderProps {
+  label: string
+  value: number
+  min: number
+  max: number
+  step: number
+  disabled: boolean
+  displayValue: string
+  onChange: (value: number) => void
+}
+
+
+const VoiceSlider: React.FC<VoiceSliderProps> = ({
+  label,
+  value,
+  min,
+  max,
+  step,
+  disabled,
+  displayValue,
+  onChange,
+}) => (
+  <label
+    style={{
+      display: 'grid',
+      gridTemplateColumns: '68px minmax(0, 1fr) 48px',
+      alignItems: 'center',
+      gap: '8px',
+      minHeight: '44px',
+      color: disabled ? '#718093' : '#b9c5d3',
+      fontSize: '12px',
+    }}
+  >
+    <span>{label}</span>
+    <input
+      type="range"
+      min={min}
+      max={max}
+      step={step}
+      value={value}
+      disabled={disabled}
+      style={{
+        width: '100%',
+        accentColor: '#4aa3ff',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+      }}
+      onChange={(event) => onChange(Number(event.currentTarget.value))}
+    />
+    <span style={{ textAlign: 'right' }}>{displayValue}</span>
+  </label>
+)
 
 
 const DetailRow: React.FC<DetailRowProps> = ({ label, value }) => (
@@ -349,6 +475,17 @@ function formatCaptureBackend(backend: ClientDiagnostics['captureBackend']): str
     default:
       return '-'
   }
+}
+
+
+function formatVoiceStatus(diagnostics: TtsDiagnostics): string {
+  if (!diagnostics.isSupported) {
+    return 'unsupported'
+  }
+  if (!diagnostics.enabled) {
+    return 'off'
+  }
+  return diagnostics.isSpeaking ? 'speaking' : 'ready'
 }
 
 

@@ -44,6 +44,7 @@ class Thresholds:
     max_dropped_chunks: int | None
     max_reconnects: int | None
     max_latency_ms: int | None
+    min_received_ratio: float | None
 
 
 @dataclass(frozen=True)
@@ -370,6 +371,10 @@ def build_report(
             "backend_audio_chunks_received": int_value(diagnostics.get("audio_chunks_received")),
             "backend_audio_chunks_dropped": int_value(diagnostics.get("audio_chunks_dropped")),
             "backend_audio_bytes_received": int_value(diagnostics.get("audio_bytes_received")),
+            "backend_received_ratio": received_ratio(
+                sent_audio_chunks=state.sent_audio_chunks,
+                backend_audio_chunks_received=int_value(diagnostics.get("audio_chunks_received")),
+            ),
             "asr_segments": int_value(diagnostics.get("asr_segments")),
             "translation_segments": int_value(diagnostics.get("translation_segments")),
             "revision_segments": int_value(diagnostics.get("revision_segments")),
@@ -387,6 +392,24 @@ def int_value(value: object) -> int:
     return 0
 
 
+def received_ratio(
+    *,
+    sent_audio_chunks: int,
+    backend_audio_chunks_received: int,
+) -> float:
+    if sent_audio_chunks <= 0:
+        return 0.0
+    return round(backend_audio_chunks_received / sent_audio_chunks, 4)
+
+
+def float_value(value: object) -> float:
+    if isinstance(value, bool):
+        return float(value)
+    if isinstance(value, int | float):
+        return float(value)
+    return 0.0
+
+
 def validate_thresholds(report: dict[str, object], thresholds: Thresholds) -> None:
     summary = report.get("summary")
     if not isinstance(summary, dict):
@@ -395,6 +418,7 @@ def validate_thresholds(report: dict[str, object], thresholds: Thresholds) -> No
     failures: list[str] = []
     dropped_chunks = int_value(summary.get("backend_audio_chunks_dropped"))
     reconnect_count = int_value(summary.get("reconnect_count"))
+    backend_received_ratio = float_value(summary.get("backend_received_ratio"))
 
     if thresholds.max_dropped_chunks is not None and dropped_chunks > thresholds.max_dropped_chunks:
         failures.append(
@@ -402,6 +426,13 @@ def validate_thresholds(report: dict[str, object], thresholds: Thresholds) -> No
         )
     if thresholds.max_reconnects is not None and reconnect_count > thresholds.max_reconnects:
         failures.append(f"reconnects {reconnect_count} > {thresholds.max_reconnects}")
+    if (
+        thresholds.min_received_ratio is not None
+        and backend_received_ratio < thresholds.min_received_ratio
+    ):
+        failures.append(
+            f"received ratio {backend_received_ratio:.4f} < {thresholds.min_received_ratio:.4f}",
+        )
 
     if thresholds.max_latency_ms is not None:
         latency = summary.get("latency")
@@ -453,12 +484,20 @@ def parse_args(argv: list[str] | None = None) -> RunnerConfig:
     parser.add_argument("--max-dropped-chunks", type=int, default=None)
     parser.add_argument("--max-reconnects", type=int, default=None)
     parser.add_argument("--max-latency-ms", type=int, default=None)
+    parser.add_argument(
+        "--min-received-ratio",
+        type=float,
+        default=None,
+        help="Fail if backend received / client sent audio chunk ratio is below this value.",
+    )
 
     args = parser.parse_args(argv)
     if args.duration_seconds <= 0:
         raise EnduranceRunnerError("Duration must be positive.")
     if args.manual_revision_interval_seconds < 0:
         raise EnduranceRunnerError("Manual revision interval cannot be negative.")
+    if args.min_received_ratio is not None and not 0 <= args.min_received_ratio <= 1:
+        raise EnduranceRunnerError("Minimum received ratio must be between 0 and 1.")
 
     return RunnerConfig(
         ws_url=args.url,
@@ -476,6 +515,7 @@ def parse_args(argv: list[str] | None = None) -> RunnerConfig:
             max_dropped_chunks=args.max_dropped_chunks,
             max_reconnects=args.max_reconnects,
             max_latency_ms=args.max_latency_ms,
+            min_received_ratio=args.min_received_ratio,
         ),
     )
 
