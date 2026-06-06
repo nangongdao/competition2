@@ -338,3 +338,128 @@ await websocket.send(chunk)
 
 The backend receives binary float32 PCM bytes, the same shape produced by the
 browser capture path.
+
+## Scenario: Endurance Preflight and Redis Compatibility
+
+### 1. Scope / Trigger
+
+- Trigger: changes to local reliability tooling that checks Redis, Whisper,
+  CUDA, or provider key readiness before a 30-60 minute endurance run.
+- Applies to `tools/endurance_preflight.py`, Redis connection setup in
+  `backend/services/context_manager.py`, `backend/storage/redis_client.py`, and
+  tests that validate preflight report blocking behavior.
+- The preflight must not send audio or call provider APIs; it only validates
+  readiness and writes a secret-safe JSON report.
+
+### 2. Signatures
+
+CLI:
+
+```bash
+python tools/endurance_preflight.py \
+  --output reports/endurance-preflight-latest.json \
+  --load-whisper-model
+```
+
+Redis settings:
+
+```python
+settings.redis_url: str
+settings.redis_protocol: int = 2
+```
+
+Core helpers:
+
+```python
+async def check_redis() -> dict[str, object]: ...
+def build_provider_check() -> dict[str, object]: ...
+def build_whisper_check(*, load_model: bool) -> dict[str, object]: ...
+def build_report(...) -> dict[str, object]: ...
+def redact_url(url: str) -> str: ...
+```
+
+### 3. Contracts
+
+- `REDIS_PROTOCOL` defaults to `2` so Redis 3.x does not fail on RESP3
+  `HELLO` during local validation.
+- Redis hash initialization that needs multiple fields must use single-field
+  `HSET` commands, optionally through a pipeline, because Redis 3.x rejects
+  multi-field `HSET`.
+- The preflight report contains:
+  - `status`: `ready` or `blocked`
+  - `blockers`: plain strings suitable for PR or daily progress notes
+  - `checks.redis`: redacted URL, protocol, version, and error metadata
+  - `checks.provider`: engine, model, required key name, and `key_present`
+  - `checks.whisper`: engine, package version, model, device, compute type,
+    CUDA availability, and optional model-load result
+  - `next_command_when_ready`: the 30-minute endurance runner command
+- Provider key values, Redis passwords, and API secrets must never be printed or
+  written to reports. Only key names and boolean presence are allowed.
+
+### 4. Validation & Error Matrix
+
+| Condition | Behavior |
+| --- | --- |
+| Redis ping fails | Report `status=blocked` and include Redis error type/message |
+| Redis URL includes credentials | Report only the redacted URL |
+| Provider engine is unsupported | Report `status=blocked` |
+| Required provider key is empty or placeholder | Report `status=blocked` |
+| `ASR_ENGINE` is not `whisper` | Report `status=blocked` |
+| `faster-whisper` is missing | Report `status=blocked` |
+| `WHISPER_DEVICE=cuda` but CUDA is unavailable | Report `status=blocked` |
+| `--load-whisper-model` fails | Report `status=blocked` |
+| All checks pass | Report `status=ready` and exit successfully |
+
+### 5. Good/Base/Bad Cases
+
+- Good: Preflight passes with Redis reachable, provider key configured,
+  Whisper installed, and the configured device available; the operator then
+  starts the backend and runs `tools/endurance_runner.py` for 30-60 minutes.
+- Base: Preflight writes a blocked report on a developer machine because a
+  provider key is missing; the report is safe to commit because it contains no
+  secret values.
+- Bad: A long endurance run is started without preflight, fails after backend
+  startup because Redis 3 rejects `HELLO` or because the provider key is a
+  placeholder, and no actionable report is produced.
+
+### 6. Tests Required
+
+- Unit tests for URL redaction and placeholder key detection.
+- Unit tests that `build_report()` blocks when provider keys are missing,
+  CUDA configuration is impossible, Redis fails, or Whisper is not configured.
+- Unit test that `build_report()` returns `ready` when Redis, provider, and
+  Whisper checks are valid.
+- Redis compatibility should be manually validated against Redis 3.x when the
+  local environment exposes it: initialize `ContextManager`, create a session,
+  reserve a segment index, and clean up the test key.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```python
+self._redis = aioredis.from_url(settings.redis_url)
+await self._redis.hset(meta_key, mapping={"segment_count": "0"})
+```
+
+This can negotiate RESP3 against Redis 3.x and can also emit a multi-field
+`HSET` shape that Redis 3.x rejects.
+
+#### Correct
+
+```python
+self._redis = aioredis.from_url(
+    settings.redis_url,
+    encoding="utf-8",
+    decode_responses=True,
+    protocol=settings.redis_protocol,
+)
+
+pipeline = self._redis.pipeline()
+for field, value in values.items():
+    pipeline.hset(meta_key, field, value)
+await pipeline.execute()
+```
+
+The connection protocol is explicit, and hash initialization remains compatible
+with both Redis 3.x and newer Redis versions.

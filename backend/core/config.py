@@ -16,6 +16,7 @@ class Settings(BaseSettings):
 
     # Redis
     redis_url: str = "redis://localhost:6379/0"
+    redis_protocol: int = 2
 
     # ASR
     asr_engine: str = "whisper"

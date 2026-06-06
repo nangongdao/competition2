@@ -55,6 +55,7 @@ Most recent recorded validation:
 Known gaps after the implemented slice:
 
 - The project now has a local endurance runner with queue-depth and received-ratio thresholds, but still needs a true 30-60 minute live run with Redis, Whisper, and provider API keys.
+- The project now has a secret-safe endurance preflight. The 2026-06-06 local preflight reached Redis and detected Whisper readiness, but the true 30-60 minute baseline is still blocked until a real `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` is configured.
 - Export coverage now includes TXT transcript, SRT subtitles, VTT subtitles, Markdown learning notes, diagnostics downloads, and unit tests for the formatter outputs; the new artifact formats still need real-session timing and readability validation.
 - Browser audio capture now defaults to `AudioWorklet`, diagnostics show the active backend, and unit tests cover main-path startup, fallback, and failed-capture cleanup; the path still needs real-session comparison against the ScriptProcessor fallback for chunk stability, dropped chunks, and latency.
 - Production-grade/provider-backed Chinese TTS playback and full desktop/system-audio capture remain intentionally deferred until the browser flow has measurable stability. The current local voice path is browser/Electron Web Speech playback, and the current desktop launcher is a local startup experience with tray and shortcut support, not a packaged system-audio capture client.
@@ -63,7 +64,7 @@ Known gaps after the implemented slice:
 
 The next roadmap slice should make the existing V2 workflow measurable and dependable before expanding the product surface.
 
-1. **Reliability and observability baseline**: run 30-60 minute live sessions with `tools/endurance_runner.py` and record client-to-backend received ratio, audio queue depth, queue wait latency, queue drops, reconnects, subtitle ordering, memory growth, ASR latency, translation latency, revision latency, revision sources, and API-call counts.
+1. **Reliability and observability baseline**: run `tools/endurance_preflight.py` first, then run 30-60 minute live sessions with `tools/endurance_runner.py` after Redis, Whisper, and provider keys are ready. Record client-to-backend received ratio, audio queue depth, queue wait latency, queue drops, reconnects, subtitle ordering, memory growth, ASR latency, translation latency, revision latency, revision sources, and API-call counts.
 2. **Export validation and artifact refinement**: validate SRT/VTT timing, revised-segment markers, Markdown note readability, and unchanged TXT/diagnostics behavior in real sessions.
 3. **Browser audio-capture validation**: validate the AudioWorklet capture path in real sessions and compare the recorded capture backend, chunk stability, dropped chunks, and latency against the ScriptProcessor fallback.
 4. **Chinese TTS playback**: validate the local Web Speech TTS slice in real sessions, including queue behavior, revised-segment handling, browser/Electron voice availability, and whether provider-backed synthesis is needed for consistent output.

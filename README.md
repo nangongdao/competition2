@@ -20,6 +20,7 @@ Implemented product capabilities now include:
 - AudioWorklet-first browser audio capture with a ScriptProcessor fallback for unsupported browsers.
 - Client diagnostics show which capture backend is active so AudioWorklet and fallback sessions can be compared.
 - Local WebSocket endurance runner for sending paced PCM audio and collecting diagnostics JSON reports.
+- Secret-safe endurance preflight for checking Redis, Whisper, CUDA, and provider key readiness before long runs.
 - Electron desktop launcher that starts the built frontend, FastAPI backend, and a native desktop window from a double-click entry.
 - Electron single-instance, tray restore, minimize-to-tray, and startup-log menu behavior for a more software-like local desktop experience.
 - Windows desktop shortcut installer scripts for launching the app from the desktop.
@@ -82,6 +83,26 @@ To create a Windows desktop shortcut, run:
 The shortcut starts `start-desktop.ps1` through a hidden PowerShell process and opens the Electron desktop window.
 
 ## Reliability Baseline Tool
+
+Before running a 30-60 minute baseline, create a real `.env` from
+`backend/.env.example` and configure Redis, Whisper, and one provider key:
+
+- `REDIS_URL` and `REDIS_PROTOCOL`.
+- `ASR_ENGINE=whisper`, `WHISPER_MODEL`, `WHISPER_DEVICE`, and
+  `WHISPER_COMPUTE_TYPE`.
+- `ANTHROPIC_API_KEY` for `NMT_ENGINE=claude`, or `OPENAI_API_KEY` for
+  `NMT_ENGINE=openai`.
+
+Run the secret-safe preflight first:
+
+```bash
+python tools/endurance_preflight.py --output reports/endurance-preflight-latest.json
+```
+
+On CPU-only machines, set `WHISPER_DEVICE=cpu` and
+`WHISPER_COMPUTE_TYPE=int8` before starting the backend. To verify the actual
+Whisper model load during preflight, add `--load-whisper-model`; this may
+download model files.
 
 Run the backend, then use the local endurance runner to send paced 16 kHz mono
 float32 PCM chunks and capture a diagnostics report:
