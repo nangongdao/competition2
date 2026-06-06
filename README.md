@@ -15,6 +15,7 @@ Implemented product capabilities now include:
 - Revision counters and visible revision metadata.
 - Real ASR correction through cached segment audio and Whisper re-decode, with LLM post-edit fallback.
 - Live session diagnostics for latency, dropped chunks, reconnects, revision counters, and API call counters.
+- Backend audio-queue diagnostics for current depth, peak depth, capacity, and queue wait latency.
 - Reconnect-safe frontend session IDs with per-session ASR stream state and revision cache isolation.
 - AudioWorklet-first browser audio capture with a ScriptProcessor fallback for unsupported browsers.
 - Client diagnostics show which capture backend is active so AudioWorklet and fallback sessions can be compared.
@@ -38,6 +39,7 @@ Recent validation:
 - `python -m compileall tools backend/test_endurance_runner.py`.
 - `.\\backend\\.venv\\Scripts\\python.exe -m unittest discover backend`.
 - `.\\backend\\.venv\\Scripts\\python.exe -m compileall backend\\api backend\\core backend\\models backend\\services backend\\storage`.
+- `.\\backend\\.venv\\Scripts\\python.exe tools\\endurance_runner.py --help`.
 - `git diff --check`.
 - Playwright desktop, mobile, and narrow viewport checks for panel overflow, prompt overlap, button text overflow, and 44px touch targets.
 
@@ -45,7 +47,7 @@ Recent validation:
 
 Recommended improvement sequence:
 
-1. Establish a real reliability baseline with 30-60 minute live endurance runs using Redis, Whisper, provider API keys, and `tools/endurance_runner.py`. Track queue drops, reconnects, subtitle ordering, memory growth, ASR latency, translation latency, revision latency, and API-call counts.
+1. Establish a real reliability baseline with 30-60 minute live endurance runs using Redis, Whisper, provider API keys, and `tools/endurance_runner.py`. Track queue depth, queue wait latency, queue drops, reconnects, subtitle ordering, memory growth, ASR latency, translation latency, revision latency, and API-call counts.
 2. Validate post-session artifacts in real sessions: confirm SRT/VTT timing, revised-segment markers, Markdown note readability, and unchanged TXT/diagnostics behavior.
 3. Validate the new AudioWorklet capture path in real sessions and compare chunk stability, dropped chunks, and latency against the ScriptProcessor fallback.
 4. Validate the local Web Speech voice playback in real browser/Electron sessions, then decide whether the next TTS slice needs provider-backed synthesis, audio artifact caching, or backend delivery.
@@ -78,7 +80,7 @@ Run the backend, then use the local endurance runner to send paced 16 kHz mono
 float32 PCM chunks and capture a diagnostics report:
 
 ```bash
-python tools/endurance_runner.py --duration-seconds 1800 --source silence --output reports/endurance-30m.json --max-dropped-chunks 0 --min-received-ratio 0.99
+python tools/endurance_runner.py --duration-seconds 1800 --source silence --output reports/endurance-30m.json --max-dropped-chunks 0 --max-queue-depth 8 --min-received-ratio 0.99
 ```
 
 For speech-like validation, provide a 16 kHz mono PCM WAV file:

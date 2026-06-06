@@ -40,6 +40,9 @@ class SessionDiagnostics:
     audio_chunks_received: int = 0
     audio_bytes_received: int = 0
     audio_chunks_dropped: int = 0
+    audio_queue_depth: int = 0
+    audio_queue_max_depth: int = 0
+    audio_queue_capacity: int = 0
     asr_segments: int = 0
     translation_segments: int = 0
     revision_segments: int = 0
@@ -56,6 +59,16 @@ class SessionDiagnostics:
 
     def record_dropped_audio_chunk(self) -> None:
         self.audio_chunks_dropped += 1
+
+    def record_audio_queue_depth(self, depth: int, capacity: int) -> None:
+        normalized_depth = max(0, int(depth))
+        normalized_capacity = max(0, int(capacity))
+        self.audio_queue_depth = normalized_depth
+        self.audio_queue_max_depth = max(self.audio_queue_max_depth, normalized_depth)
+        self.audio_queue_capacity = normalized_capacity
+
+    def record_audio_queue_wait(self, latency_ms: int) -> None:
+        self.record_latency("audio_queue_wait_ms", latency_ms)
 
     def record_asr_segment(self, latency_ms: int | None = None) -> None:
         self.asr_segments += 1
@@ -114,6 +127,9 @@ class SessionDiagnostics:
             "audio_chunks_received": self.audio_chunks_received,
             "audio_bytes_received": self.audio_bytes_received,
             "audio_chunks_dropped": self.audio_chunks_dropped,
+            "audio_queue_depth": self.audio_queue_depth,
+            "audio_queue_max_depth": self.audio_queue_max_depth,
+            "audio_queue_capacity": self.audio_queue_capacity,
             "asr_segments": self.asr_segments,
             "translation_segments": self.translation_segments,
             "revision_segments": self.revision_segments,

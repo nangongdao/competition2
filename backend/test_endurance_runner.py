@@ -100,6 +100,9 @@ class EnduranceRunnerTests(unittest.TestCase):
             "audio_chunks_received": 3,
             "audio_chunks_dropped": 1,
             "reconnect_count": 0,
+            "audio_queue_depth": 0,
+            "audio_queue_max_depth": 2,
+            "audio_queue_capacity": 16,
             "latency": {"capture_to_asr_ms": {"count": 1, "avg_ms": 120, "max_ms": 120}},
         }
         config = make_config()
@@ -116,6 +119,9 @@ class EnduranceRunnerTests(unittest.TestCase):
         self.assertIsInstance(summary, dict)
         self.assertEqual(summary["backend_audio_chunks_received"], 3)
         self.assertEqual(summary["backend_audio_chunks_dropped"], 1)
+        self.assertEqual(summary["backend_audio_queue_depth"], 0)
+        self.assertEqual(summary["backend_audio_queue_max_depth"], 2)
+        self.assertEqual(summary["backend_audio_queue_capacity"], 16)
         self.assertEqual(summary["backend_received_ratio"], 1.0)
         self.assertEqual(summary["reconnect_count"], 0)
 
@@ -133,6 +139,29 @@ class EnduranceRunnerTests(unittest.TestCase):
                 report,
                 Thresholds(
                     max_dropped_chunks=1,
+                    max_queue_depth=None,
+                    max_reconnects=None,
+                    max_latency_ms=None,
+                    min_received_ratio=None,
+                ),
+            )
+
+    def test_validate_thresholds_raises_for_queue_depth(self) -> None:
+        report = {
+            "summary": {
+                "backend_audio_chunks_dropped": 0,
+                "backend_audio_queue_max_depth": 9,
+                "reconnect_count": 0,
+                "latency": {},
+            },
+        }
+
+        with self.assertRaises(EnduranceRunnerError):
+            validate_thresholds(
+                report,
+                Thresholds(
+                    max_dropped_chunks=None,
+                    max_queue_depth=8,
                     max_reconnects=None,
                     max_latency_ms=None,
                     min_received_ratio=None,
@@ -154,6 +183,7 @@ class EnduranceRunnerTests(unittest.TestCase):
                 report,
                 Thresholds(
                     max_dropped_chunks=None,
+                    max_queue_depth=None,
                     max_reconnects=None,
                     max_latency_ms=None,
                     min_received_ratio=0.95,
@@ -176,6 +206,7 @@ def make_config() -> RunnerConfig:
         output_path=Path("reports/endurance-latest.json"),
         thresholds=Thresholds(
             max_dropped_chunks=None,
+            max_queue_depth=None,
             max_reconnects=None,
             max_latency_ms=None,
             min_received_ratio=None,

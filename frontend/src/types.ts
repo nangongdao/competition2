@@ -59,6 +59,9 @@ export interface SessionDiagnostics {
   audio_chunks_received: number
   audio_bytes_received: number
   audio_chunks_dropped: number
+  audio_queue_depth: number
+  audio_queue_max_depth: number
+  audio_queue_capacity: number
   asr_segments: number
   translation_segments: number
   revision_segments: number

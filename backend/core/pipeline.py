@@ -48,6 +48,7 @@ class Pipeline:
         self._audio_queue: asyncio.Queue[tuple[bytes, float]] = asyncio.Queue(
             maxsize=settings.audio_queue_max_chunks,
         )
+        self._record_audio_queue_depth()
 
         self._asr.set_on_partial(self._handle_asr_partial)
         self._asr.set_on_final(self._handle_asr_final)
@@ -83,6 +84,7 @@ class Pipeline:
                 await self._audio_worker_task
             self._audio_worker_task = None
 
+        self._record_audio_queue_depth()
         self._asr.reset_session_state()
         self._diagnostics.finish()
         await self._emit_diagnostics()
@@ -98,8 +100,10 @@ class Pipeline:
 
         try:
             self._audio_queue.put_nowait((audio_chunk, received_at))
+            self._record_audio_queue_depth()
         except asyncio.QueueFull:
             self._diagnostics.record_dropped_audio_chunk()
+            self._record_audio_queue_depth()
             logger.warning(
                 "Dropping audio chunk for {} because queue is full",
                 self.session_id,
@@ -120,6 +124,9 @@ class Pipeline:
         while True:
             audio_chunk, received_at = await self._audio_queue.get()
             try:
+                self._record_audio_queue_depth()
+                queue_wait_ms = round((asyncio.get_running_loop().time() - received_at) * 1000)
+                self._diagnostics.record_audio_queue_wait(queue_wait_ms)
                 await self._process_audio_now(audio_chunk, received_at)
             except asyncio.CancelledError:
                 raise
@@ -328,6 +335,12 @@ class Pipeline:
     async def _emit(self, message: dict) -> None:
         if self._on_message:
             await self._on_message(message)
+
+    def _record_audio_queue_depth(self) -> None:
+        self._diagnostics.record_audio_queue_depth(
+            self._audio_queue.qsize(),
+            self._audio_queue.maxsize,
+        )
 
     def _revision_to_message(self, revision: RevisionResult) -> dict:
         message = {

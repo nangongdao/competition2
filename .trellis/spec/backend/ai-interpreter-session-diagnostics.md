@@ -29,6 +29,8 @@ class SessionDiagnostics:
 
     def record_audio_chunk(self, size_bytes: int) -> None: ...
     def record_dropped_audio_chunk(self) -> None: ...
+    def record_audio_queue_depth(self, depth: int, capacity: int) -> None: ...
+    def record_audio_queue_wait(self, latency_ms: int) -> None: ...
     def record_asr_segment(self, latency_ms: int | None = None) -> None: ...
     def record_translation_segment(
         self,
@@ -109,6 +111,7 @@ Backend session isolation:
 Backend audio queue:
 
 - `Pipeline.process_audio()` enqueues chunks into a bounded queue with `settings.audio_queue_max_chunks`.
+- Queue diagnostics must expose current depth, maximum observed depth, queue capacity, and average/max queue wait latency so long-session runs can detect backlog before chunks drop.
 - Queue overflow increments `audio_chunks_dropped`, emits status code `AUDIO_QUEUE_FULL`, and emits a diagnostics snapshot.
 - `Pipeline.stop()` cancels the audio worker and silence timer so in-flight ASR/NMT/revision work does not continue after disconnect.
 
@@ -124,11 +127,15 @@ Diagnostics response:
     "audio_chunks_received": 100,
     "audio_bytes_received": 640000,
     "audio_chunks_dropped": 0,
+    "audio_queue_depth": 0,
+    "audio_queue_max_depth": 3,
+    "audio_queue_capacity": 16,
     "asr_segments": 3,
     "translation_segments": 3,
     "revision_segments": 1,
     "reconnect_count": 0,
     "latency": {
+      "audio_queue_wait_ms": { "count": 100, "avg_ms": 8, "max_ms": 44 },
       "capture_to_asr_ms": { "count": 3, "avg_ms": 2100, "max_ms": 2300 }
     },
     "api_call_counts": { "nmt_stream": 4 },
@@ -141,6 +148,7 @@ Diagnostics response:
 
 Latency keys:
 
+- `audio_queue_wait_ms`
 - `capture_to_asr_ms`
 - `asr_to_first_token_ms`
 - `asr_to_translation_final_ms`
@@ -153,6 +161,7 @@ Latency keys:
 | New client run | Generate a new frontend session ID and connect to `/ws/translate/{session_id}` |
 | Automatic reconnect during a run | Reuse the same session ID; backend increments `reconnect_count` |
 | Same session connects while old pipeline is active | Stop old pipeline before installing the new one; old handler must not pop the new pipeline |
+| Audio queue grows without overflowing | Update `audio_queue_depth`, `audio_queue_max_depth`, and `audio_queue_wait_ms` without emitting an error |
 | Audio queue is full | Drop the chunk, increment diagnostics, emit `AUDIO_QUEUE_FULL` |
 | WebSocket disconnects | Cancel worker/silence tasks and reset ASR session buffers/callbacks |
 | Redis meta exists but reconnect count is missing | `hincrby` creates/updates the field; do not reset segment count |
@@ -168,6 +177,7 @@ Latency keys:
 
 - Unit test `SessionDiagnostics.snapshot()`:
   - audio chunk and drop counters are preserved
+  - audio queue depth, maximum depth, capacity, and wait-latency summaries are preserved
   - latency summaries expose `count`, `avg_ms`, and `max_ms`
   - API/revision counters are emitted as plain objects
 - Revision tests must keep passing after per-session revision counters are added.
@@ -234,7 +244,8 @@ python tools/endurance_runner.py \
   --duration-seconds 1800 \
   --url ws://localhost:8000/api/v1/ws/translate \
   --output reports/endurance-30m.json \
-  --min-received-ratio 0.99
+  --min-received-ratio 0.99 \
+  --max-queue-depth 8
 ```
 
 Core report helpers:
@@ -263,7 +274,7 @@ def validate_thresholds(report: dict[str, object], thresholds: Thresholds) -> No
   - server error messages
   - latest `session_diagnostics`
   - a summary of backend received/dropped chunks, segment counts, reconnects,
-    received/sent chunk ratio, and latency stats
+    queue depth/capacity, received/sent chunk ratio, and latency stats
 
 ### 4. Validation & Error Matrix
 
@@ -276,6 +287,7 @@ def validate_thresholds(report: dict[str, object], thresholds: Thresholds) -> No
 | WAV sample rate differs from configured sample rate | Fail before connecting |
 | WebSocket closes during the run | Stop receiving and write the report from collected data |
 | Dropped chunks exceed configured threshold | Raise a runner error and exit non-zero |
+| Backend audio queue max depth exceeds configured threshold | Raise a runner error and exit non-zero |
 | Reconnects exceed configured threshold | Raise a runner error and exit non-zero |
 | Backend received/sent chunk ratio is below configured threshold | Raise a runner error and exit non-zero |
 | Average latency exceeds configured threshold | Raise a runner error and exit non-zero |
@@ -294,8 +306,8 @@ def validate_thresholds(report: dict[str, object], thresholds: Thresholds) -> No
 ### 6. Tests Required
 
 - Unit tests for URL construction, PCM conversion, WAV looping, message
-  recording, report summarization, received-ratio calculation, and threshold
-  failures.
+  recording, report summarization, queue-depth reporting, received-ratio
+  calculation, and threshold failures.
 - `python -m unittest backend.test_endurance_runner`
 - `python -m compileall tools backend/test_endurance_runner.py`
 - A real reliability baseline still requires a live backend with Redis, Whisper,

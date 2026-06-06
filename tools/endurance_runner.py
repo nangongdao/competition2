@@ -42,6 +42,7 @@ class EnduranceRunnerError(RuntimeError):
 @dataclass(frozen=True)
 class Thresholds:
     max_dropped_chunks: int | None
+    max_queue_depth: int | None
     max_reconnects: int | None
     max_latency_ms: int | None
     min_received_ratio: float | None
@@ -371,6 +372,9 @@ def build_report(
             "backend_audio_chunks_received": int_value(diagnostics.get("audio_chunks_received")),
             "backend_audio_chunks_dropped": int_value(diagnostics.get("audio_chunks_dropped")),
             "backend_audio_bytes_received": int_value(diagnostics.get("audio_bytes_received")),
+            "backend_audio_queue_depth": int_value(diagnostics.get("audio_queue_depth")),
+            "backend_audio_queue_max_depth": int_value(diagnostics.get("audio_queue_max_depth")),
+            "backend_audio_queue_capacity": int_value(diagnostics.get("audio_queue_capacity")),
             "backend_received_ratio": received_ratio(
                 sent_audio_chunks=state.sent_audio_chunks,
                 backend_audio_chunks_received=int_value(diagnostics.get("audio_chunks_received")),
@@ -417,12 +421,17 @@ def validate_thresholds(report: dict[str, object], thresholds: Thresholds) -> No
 
     failures: list[str] = []
     dropped_chunks = int_value(summary.get("backend_audio_chunks_dropped"))
+    queue_max_depth = int_value(summary.get("backend_audio_queue_max_depth"))
     reconnect_count = int_value(summary.get("reconnect_count"))
     backend_received_ratio = float_value(summary.get("backend_received_ratio"))
 
     if thresholds.max_dropped_chunks is not None and dropped_chunks > thresholds.max_dropped_chunks:
         failures.append(
             f"dropped chunks {dropped_chunks} > {thresholds.max_dropped_chunks}",
+        )
+    if thresholds.max_queue_depth is not None and queue_max_depth > thresholds.max_queue_depth:
+        failures.append(
+            f"audio queue max depth {queue_max_depth} > {thresholds.max_queue_depth}",
         )
     if thresholds.max_reconnects is not None and reconnect_count > thresholds.max_reconnects:
         failures.append(f"reconnects {reconnect_count} > {thresholds.max_reconnects}")
@@ -482,6 +491,12 @@ def parse_args(argv: list[str] | None = None) -> RunnerConfig:
     )
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT_PATH)
     parser.add_argument("--max-dropped-chunks", type=int, default=None)
+    parser.add_argument(
+        "--max-queue-depth",
+        type=int,
+        default=None,
+        help="Fail if backend audio queue max depth exceeds this value.",
+    )
     parser.add_argument("--max-reconnects", type=int, default=None)
     parser.add_argument("--max-latency-ms", type=int, default=None)
     parser.add_argument(
@@ -496,6 +511,8 @@ def parse_args(argv: list[str] | None = None) -> RunnerConfig:
         raise EnduranceRunnerError("Duration must be positive.")
     if args.manual_revision_interval_seconds < 0:
         raise EnduranceRunnerError("Manual revision interval cannot be negative.")
+    if args.max_queue_depth is not None and args.max_queue_depth < 0:
+        raise EnduranceRunnerError("Maximum queue depth cannot be negative.")
     if args.min_received_ratio is not None and not 0 <= args.min_received_ratio <= 1:
         raise EnduranceRunnerError("Minimum received ratio must be between 0 and 1.")
 
@@ -513,6 +530,7 @@ def parse_args(argv: list[str] | None = None) -> RunnerConfig:
         output_path=args.output,
         thresholds=Thresholds(
             max_dropped_chunks=args.max_dropped_chunks,
+            max_queue_depth=args.max_queue_depth,
             max_reconnects=args.max_reconnects,
             max_latency_ms=args.max_latency_ms,
             min_received_ratio=args.min_received_ratio,

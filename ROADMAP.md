@@ -19,6 +19,7 @@ Implemented capabilities now include:
 - Real low-confidence ASR correction through cached segment audio, Whisper re-decode, and LLM post-edit fallback.
 - Revision-cost controls through translation-window caching, unchanged-context skips, and API-call counters.
 - Live session diagnostics for latency, dropped chunks, reconnects, revision counters, revision sources, revision triggers, and API-call counters.
+- Backend audio-queue diagnostics for current depth, peak depth, capacity, and queue wait latency.
 - Reconnect-safe frontend session IDs with per-session ASR stream state and revision cache isolation.
 - AudioWorklet-first browser audio capture with a ScriptProcessor fallback for unsupported browsers.
 - Client diagnostics now expose the active capture backend for AudioWorklet versus fallback validation.
@@ -42,12 +43,13 @@ Most recent recorded validation:
 - `python -m compileall tools backend/test_endurance_runner.py`
 - `.\\backend\\.venv\\Scripts\\python.exe -m unittest discover backend`
 - `.\\backend\\.venv\\Scripts\\python.exe -m compileall backend\\api backend\\core backend\\models backend\\services backend\\storage`
+- `.\\backend\\.venv\\Scripts\\python.exe tools\\endurance_runner.py --help`
 - `git diff --check`
 - Playwright viewport checks for desktop, mobile, and narrow mobile layouts
 
 Known gaps after the implemented slice:
 
-- The project now has a local endurance runner, but still needs a true 30-60 minute live run with Redis, Whisper, and provider API keys.
+- The project now has a local endurance runner with queue-depth and received-ratio thresholds, but still needs a true 30-60 minute live run with Redis, Whisper, and provider API keys.
 - Export coverage now includes TXT transcript, SRT subtitles, VTT subtitles, Markdown learning notes, and diagnostics downloads; the new artifact formats still need real-session timing and readability validation.
 - Browser audio capture now defaults to `AudioWorklet`, and diagnostics show the active backend; the new path still needs real-session comparison against the ScriptProcessor fallback for chunk stability, dropped chunks, and latency.
 - Production-grade/provider-backed Chinese TTS playback and full desktop/system-audio capture remain intentionally deferred until the browser flow has measurable stability. The current local voice path is browser/Electron Web Speech playback, and the current desktop launcher is a local startup experience with tray and shortcut support, not a packaged system-audio capture client.
@@ -56,7 +58,7 @@ Known gaps after the implemented slice:
 
 The next roadmap slice should make the existing V2 workflow measurable and dependable before expanding the product surface.
 
-1. **Reliability and observability baseline**: run 30-60 minute live sessions with `tools/endurance_runner.py` and record client-to-backend received ratio, queue drops, reconnects, subtitle ordering, memory growth, ASR latency, translation latency, revision latency, revision sources, and API-call counts.
+1. **Reliability and observability baseline**: run 30-60 minute live sessions with `tools/endurance_runner.py` and record client-to-backend received ratio, audio queue depth, queue wait latency, queue drops, reconnects, subtitle ordering, memory growth, ASR latency, translation latency, revision latency, revision sources, and API-call counts.
 2. **Export validation and artifact refinement**: validate SRT/VTT timing, revised-segment markers, Markdown note readability, and unchanged TXT/diagnostics behavior in real sessions.
 3. **Browser audio-capture validation**: validate the AudioWorklet capture path in real sessions and compare the recorded capture backend, chunk stability, dropped chunks, and latency against the ScriptProcessor fallback.
 4. **Chinese TTS playback**: validate the local Web Speech TTS slice in real sessions, including queue behavior, revised-segment handling, browser/Electron voice availability, and whether provider-backed synthesis is needed for consistent output.
