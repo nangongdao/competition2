@@ -21,6 +21,7 @@ Implemented capabilities now include:
 - Live session diagnostics for latency, dropped chunks, reconnects, revision counters, revision sources, revision triggers, and API-call counters.
 - Reconnect-safe frontend session IDs with per-session ASR stream state and revision cache isolation.
 - AudioWorklet-first browser audio capture with a ScriptProcessor fallback for unsupported browsers.
+- Local WebSocket endurance runner that sends paced PCM audio and writes diagnostics JSON reports.
 - Durable subtitle history that is separate from the visible subtitle list.
 - Subtitle history panel with transcript copy and TXT download.
 - SRT subtitle export, VTT subtitle export, and Markdown learning-note export from subtitle history.
@@ -32,6 +33,8 @@ Implemented capabilities now include:
 Most recent recorded validation:
 
 - `npm.cmd run build`
+- `python -m unittest backend.test_endurance_runner`
+- `python -m compileall tools backend/test_endurance_runner.py`
 - `.\\backend\\.venv\\Scripts\\python.exe -m unittest discover backend`
 - `.\\backend\\.venv\\Scripts\\python.exe -m compileall backend\\api backend\\core backend\\models backend\\services backend\\storage`
 - `git diff --check`
@@ -39,7 +42,7 @@ Most recent recorded validation:
 
 Known gaps after the implemented slice:
 
-- The project still needs a true 30-60 minute live endurance run with Redis, Whisper, and provider API keys.
+- The project now has a local endurance runner, but still needs a true 30-60 minute live run with Redis, Whisper, and provider API keys.
 - Export coverage now includes TXT transcript, SRT subtitles, VTT subtitles, Markdown learning notes, and diagnostics downloads; the new artifact formats still need real-session timing and readability validation.
 - Browser audio capture now defaults to `AudioWorklet`; the new path still needs real-session comparison against the ScriptProcessor fallback for chunk stability, dropped chunks, and latency.
 - Chinese TTS playback and desktop/system-audio capture remain intentionally deferred until the browser flow has measurable stability.
@@ -48,7 +51,7 @@ Known gaps after the implemented slice:
 
 The next roadmap slice should make the existing V2 workflow measurable and dependable before expanding the product surface.
 
-1. **Reliability and observability baseline**: run 30-60 minute live sessions and record queue drops, reconnects, subtitle ordering, memory growth, ASR latency, translation latency, revision latency, revision sources, and API-call counts.
+1. **Reliability and observability baseline**: run 30-60 minute live sessions with `tools/endurance_runner.py` and record queue drops, reconnects, subtitle ordering, memory growth, ASR latency, translation latency, revision latency, revision sources, and API-call counts.
 2. **Export validation and artifact refinement**: validate SRT/VTT timing, revised-segment markers, Markdown note readability, and unchanged TXT/diagnostics behavior in real sessions.
 3. **Browser audio-capture validation**: validate the AudioWorklet capture path in real sessions and compare chunk stability, dropped chunks, and latency against the ScriptProcessor fallback.
 4. **Chinese TTS playback**: add TTS after reliability and export baselines are stable. The first TTS slice should include playback queueing, volume control, latency tracking, and correction handling for already-spoken subtitles.

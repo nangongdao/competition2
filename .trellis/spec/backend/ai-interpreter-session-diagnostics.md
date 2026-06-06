@@ -210,3 +210,106 @@ segment.text_translated = "".join(translated_parts).strip()
 ```
 
 The model/client may be shared, but mutable live-stream state stays owned by one pipeline.
+
+## Scenario: WebSocket Endurance Runner
+
+### 1. Scope / Trigger
+
+- Trigger: changes to local reliability tooling that sends audio over the live
+  WebSocket or reads `session_diagnostics` payloads.
+- Applies to `tools/endurance_runner.py` and tests that validate report
+  summarization or threshold behavior.
+- The runner is a client-side validation tool only; it must not change backend
+  WebSocket payload schemas.
+
+### 2. Signatures
+
+CLI:
+
+```bash
+python tools/endurance_runner.py \
+  --duration-seconds 1800 \
+  --url ws://localhost:8000/api/v1/ws/translate \
+  --output reports/endurance-30m.json
+```
+
+Core report helpers:
+
+```python
+def build_session_url(ws_url: str, session_id: str) -> str: ...
+def record_message(state: RunnerState, message: dict[str, object]) -> None: ...
+def build_report(...) -> dict[str, object]: ...
+def validate_thresholds(report: dict[str, object], thresholds: Thresholds) -> None: ...
+```
+
+### 3. Contracts
+
+- Default WebSocket URL is `/api/v1/ws/translate`; when that base route is used,
+  the runner appends a generated or provided session ID.
+- Audio chunks are sent as binary 16 kHz mono float32 PCM, matching the browser
+  capture payload shape.
+- Generated sources may be `silence` or `tone`; WAV input must be mono PCM at the
+  configured sample rate.
+- Manual revision controls are sent as text JSON
+  `{"type": "manual_revise"}` when a positive interval is configured.
+- Reports are JSON files containing:
+  - client-side sent chunk/byte counts
+  - received message counts
+  - status code counts
+  - server error messages
+  - latest `session_diagnostics`
+  - a summary of backend received/dropped chunks, segment counts, reconnects,
+    and latency stats
+
+### 4. Validation & Error Matrix
+
+| Condition | Behavior |
+| --- | --- |
+| Duration is non-positive | Fail before connecting |
+| Manual revision interval is negative | Fail before connecting |
+| WAV path is missing | Fail before connecting |
+| WAV is not mono | Fail before connecting |
+| WAV sample rate differs from configured sample rate | Fail before connecting |
+| WebSocket closes during the run | Stop receiving and write the report from collected data |
+| Dropped chunks exceed configured threshold | Raise a runner error and exit non-zero |
+| Reconnects exceed configured threshold | Raise a runner error and exit non-zero |
+| Average latency exceeds configured threshold | Raise a runner error and exit non-zero |
+
+### 5. Good/Base/Bad Cases
+
+- Good: A 30-60 minute run sends paced WAV audio, receives diagnostics snapshots,
+  writes a report under `reports/`, and fails if dropped chunks or latency exceed
+  the configured threshold.
+- Base: A short local smoke run sends generated silence to verify WebSocket
+  connectivity and diagnostics emission.
+- Bad: The runner sends JSON-wrapped audio, changes backend message schemas, or
+  treats the presence of the tool as proof that long-session stability has been
+  validated.
+
+### 6. Tests Required
+
+- Unit tests for URL construction, PCM conversion, WAV looping, message
+  recording, report summarization, and threshold failures.
+- `python -m unittest backend.test_endurance_runner`
+- `python -m compileall tools backend/test_endurance_runner.py`
+- A real reliability baseline still requires a live backend with Redis, Whisper,
+  provider API keys, and a 30-60 minute run.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```python
+await websocket.send(json.dumps({"type": "audio_chunk", "data": chunk.hex()}))
+```
+
+This sends a payload shape the backend does not process as audio.
+
+#### Correct
+
+```python
+await websocket.send(chunk)
+```
+
+The backend receives binary float32 PCM bytes, the same shape produced by the
+browser capture path.

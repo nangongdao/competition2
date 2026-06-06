@@ -17,6 +17,7 @@ Implemented product capabilities now include:
 - Live session diagnostics for latency, dropped chunks, reconnects, revision counters, and API call counters.
 - Reconnect-safe frontend session IDs with per-session ASR stream state and revision cache isolation.
 - AudioWorklet-first browser audio capture with a ScriptProcessor fallback for unsupported browsers.
+- Local WebSocket endurance runner for sending paced PCM audio and collecting diagnostics JSON reports.
 - Durable subtitle history separated from the short visible subtitle list.
 - Transcript copy and TXT download from the subtitle history panel.
 - SRT subtitle export, VTT subtitle export, and Markdown learning-note export from
@@ -27,6 +28,8 @@ Implemented product capabilities now include:
 Recent validation:
 
 - `npm.cmd run build` in `frontend`.
+- `python -m unittest backend.test_endurance_runner`.
+- `python -m compileall tools backend/test_endurance_runner.py`.
 - `.\\backend\\.venv\\Scripts\\python.exe -m unittest discover backend`.
 - `.\\backend\\.venv\\Scripts\\python.exe -m compileall backend\\api backend\\core backend\\models backend\\services backend\\storage`.
 - `git diff --check`.
@@ -36,11 +39,26 @@ Recent validation:
 
 Recommended improvement sequence:
 
-1. Establish a real reliability baseline with 30-60 minute live endurance runs using Redis, Whisper, and provider API keys. Track queue drops, reconnects, subtitle ordering, memory growth, ASR latency, translation latency, revision latency, and API-call counts.
+1. Establish a real reliability baseline with 30-60 minute live endurance runs using Redis, Whisper, provider API keys, and `tools/endurance_runner.py`. Track queue drops, reconnects, subtitle ordering, memory growth, ASR latency, translation latency, revision latency, and API-call counts.
 2. Validate post-session artifacts in real sessions: confirm SRT/VTT timing, revised-segment markers, Markdown note readability, and unchanged TXT/diagnostics behavior.
 3. Validate the new AudioWorklet capture path in real sessions and compare chunk stability, dropped chunks, and latency against the ScriptProcessor fallback.
 4. Add Chinese TTS playback only after the reliability and export baselines are stable. The TTS slice should include playback queueing, volume control, and a clear strategy for revised subtitles.
 5. Defer desktop/system-audio capture until the browser workflow has measurable stability. At that point, evaluate Tauri or Electron against real capture, packaging, and memory requirements.
+
+## Reliability Baseline Tool
+
+Run the backend, then use the local endurance runner to send paced 16 kHz mono
+float32 PCM chunks and capture a diagnostics report:
+
+```bash
+python tools/endurance_runner.py --duration-seconds 1800 --source silence --output reports/endurance-30m.json --max-dropped-chunks 0
+```
+
+For speech-like validation, provide a 16 kHz mono PCM WAV file:
+
+```bash
+python tools/endurance_runner.py --duration-seconds 3600 --wav path/to/sample.wav --manual-revision-interval-seconds 300 --output reports/endurance-60m.json
+```
 
 ## Iteration Workflow
 
