@@ -131,6 +131,90 @@ export function useOrdersWithPrefetch() {
 
 ## Real-time Communication
 
+### Browser Audio Capture for Live Interpretation
+
+The live interpretation frontend captures browser/system-tab audio and sends
+PCM chunks over the WebSocket translation channel. Keep this path stable because
+backend diagnostics, dropped-chunk accounting, and ASR streaming depend on the
+chunk cadence.
+
+#### 1. Scope / Trigger
+
+- Trigger: changes to `frontend/src/audio/AudioCapture.ts`, its worklet
+  processor, or the browser audio chunking path.
+- Scope: browser capture only. Backend WebSocket message schemas are unchanged.
+
+#### 2. Signatures
+
+```typescript
+export type AudioCaptureState = 'inactive' | 'active' | 'error'
+
+export interface AudioCaptureCallbacks {
+  onStateChange: (state: AudioCaptureState) => void
+  onAudioChunk: (chunk: ArrayBuffer) => void
+}
+```
+
+#### 3. Contracts
+
+- Use `AudioWorkletNode` as the primary browser capture path so audio processing
+  stays off the main UI thread.
+- Keep `ScriptProcessorNode` only as a compatibility fallback for browsers or
+  contexts where `AudioWorklet` is unavailable or the worklet module fails to
+  load.
+- In the Vite frontend, load the processor from a static `public/` asset such as
+  `/audio-capture-worklet.js`; worklet files cannot import TypeScript modules
+  from `src/`.
+- Preserve the existing WebSocket payload contract: flush buffered mono
+  `Float32Array` PCM samples as `ArrayBuffer` chunks.
+- Treat worklet `message` payloads as `unknown`, validate the shape, and avoid
+  `any` or type-suppression comments.
+- On start failure, user media-track ending, or manual stop, clean up timers,
+  worklet/script nodes, media sources, `AudioContext`, and media tracks.
+
+#### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+| --- | --- |
+| `getDisplayMedia` returns no audio track | Throw a clear "Share audio" error, clean up resources, emit `error` state |
+| `AudioWorklet` is unavailable | Start `ScriptProcessorNode` fallback without changing the callback contract |
+| Worklet module load fails | Warn once, disconnect partial worklet state, start fallback |
+| User stops sharing audio | Stop capture and emit `inactive` state |
+| Manual stop | Clear timers, nodes, context, media tracks, and buffered chunks |
+
+#### 5. Good/Base/Bad Cases
+
+- Good: AudioWorklet starts, worklet messages are validated as `unknown`, and
+  buffered `Float32Array` samples flush through `onAudioChunk`.
+- Base: AudioWorklet fails in an unsupported browser and the same callback
+  contract continues through ScriptProcessor fallback.
+- Bad: capture code posts unvalidated worklet messages, drops cleanup on a failed
+  start, or sends a different WebSocket payload shape.
+
+#### 6. Tests Required
+
+- Run the frontend production build after changing capture code.
+- Verify unsupported or failed worklet loading falls back to `ScriptProcessorNode`.
+- In a real browser session, compare AudioWorklet and fallback diagnostics for
+  chunk count, dropped chunks, and latency before removing fallback behavior.
+
+#### 7. Wrong vs Correct
+
+```typescript
+// Wrong: assumes the worklet payload shape.
+workletNode.port.onmessage = (event) => {
+  chunkBuffer.push(event.data.samples)
+}
+
+// Correct: validate unknown payloads before buffering.
+workletNode.port.onmessage = (event: MessageEvent<unknown>) => {
+  const message = parseAudioWorkletChunkMessage(event.data)
+  if (message) {
+    chunkBuffer.push(message.samples)
+  }
+}
+```
+
 ### WebSocket with Ably
 
 ```typescript

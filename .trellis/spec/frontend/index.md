@@ -47,6 +47,7 @@
 | Task                        | Document                                           |
 | --------------------------- | -------------------------------------------------- |
 | Make type-safe API calls    | [orpc-usage.md](./orpc-usage.md)                   |
+| Maintain live audio capture | [api-integration.md](./api-integration.md)         |
 | Create custom hooks         | [hooks.md](./hooks.md)                             |
 | Manage application state    | [state-management.md](./state-management.md)       |
 | Build UI components         | [components.md](./components.md)                   |

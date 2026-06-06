@@ -8,7 +8,7 @@
 
 ## Current Progress Snapshot - 2026-06-06
 
-This roadmap has moved from an MVP plan into an implemented V2 product slice. The next work should now focus on measured reliability, export validation, and audio-capture hardening before adding larger surface-area features.
+This roadmap has moved from an MVP plan into an implemented V2 product slice. The next work should now focus on measured reliability, export validation, and audio-capture validation before adding larger surface-area features.
 
 Implemented capabilities now include:
 
@@ -20,6 +20,7 @@ Implemented capabilities now include:
 - Revision-cost controls through translation-window caching, unchanged-context skips, and API-call counters.
 - Live session diagnostics for latency, dropped chunks, reconnects, revision counters, revision sources, revision triggers, and API-call counters.
 - Reconnect-safe frontend session IDs with per-session ASR stream state and revision cache isolation.
+- AudioWorklet-first browser audio capture with a ScriptProcessor fallback for unsupported browsers.
 - Durable subtitle history that is separate from the visible subtitle list.
 - Subtitle history panel with transcript copy and TXT download.
 - SRT subtitle export, VTT subtitle export, and Markdown learning-note export from subtitle history.
@@ -40,7 +41,7 @@ Known gaps after the implemented slice:
 
 - The project still needs a true 30-60 minute live endurance run with Redis, Whisper, and provider API keys.
 - Export coverage now includes TXT transcript, SRT subtitles, VTT subtitles, Markdown learning notes, and diagnostics downloads; the new artifact formats still need real-session timing and readability validation.
-- Browser audio capture still uses `ScriptProcessorNode`, so the AudioWorklet migration remains a near-term technical-debt item.
+- Browser audio capture now defaults to `AudioWorklet`; the new path still needs real-session comparison against the ScriptProcessor fallback for chunk stability, dropped chunks, and latency.
 - Chinese TTS playback and desktop/system-audio capture remain intentionally deferred until the browser flow has measurable stability.
 
 ## Priority Improvement Directions - 2026-06-06
@@ -49,7 +50,7 @@ The next roadmap slice should make the existing V2 workflow measurable and depen
 
 1. **Reliability and observability baseline**: run 30-60 minute live sessions and record queue drops, reconnects, subtitle ordering, memory growth, ASR latency, translation latency, revision latency, revision sources, and API-call counts.
 2. **Export validation and artifact refinement**: validate SRT/VTT timing, revised-segment markers, Markdown note readability, and unchanged TXT/diagnostics behavior in real sessions.
-3. **Browser audio-capture hardening**: migrate the frontend capture path from `ScriptProcessorNode` to `AudioWorklet`, then compare chunk stability, dropped chunks, and latency against the current implementation.
+3. **Browser audio-capture validation**: validate the AudioWorklet capture path in real sessions and compare chunk stability, dropped chunks, and latency against the ScriptProcessor fallback.
 4. **Chinese TTS playback**: add TTS after reliability and export baselines are stable. The first TTS slice should include playback queueing, volume control, latency tracking, and correction handling for already-spoken subtitles.
 5. **Desktop/system-audio capture**: defer until the browser workflow is stable. Evaluate Tauri or Electron using real requirements for system-audio capture, packaging size, memory usage, and cross-platform support.
 6. **Later expansion**: keep multi-language input, glossary support, and learning-assistant features behind the reliability/export/TTS work so core live interpretation quality remains the priority.
@@ -286,7 +287,7 @@ The next roadmap slice should make the existing V2 workflow measurable and depen
 
 1. 长时稳定性、延迟和资源占用基线验证
 2. 导出产物真实会话校验与格式优化
-3. 浏览器音频采集从 ScriptProcessorNode 迁移到 AudioWorklet
+3. AudioWorklet browser capture validation
 4. TTS 中文语音播报
 5. 桌面端系统音频采集
 6. 自动化测试体系与指标监控补强
@@ -1765,7 +1766,7 @@ class GlossaryService:
 
 | 编号 | 技术债务 | 当前状态 | 计划版本 | 优先级 |
 |------|---------|---------|---------|--------|
-| TD-1 | ScriptProcessorNode → AudioWorklet | 使用废弃 API | V2.3 | MEDIUM |
+| TD-1 | ScriptProcessorNode to AudioWorklet | Implemented with fallback; needs live-session comparison | V2.3 | MEDIUM |
 | TD-2 | 字幕 Store/Renderer 数据重复同步 | 全量渲染 | V2.2 | MEDIUM |
 | TD-3 | 多 Session 共享 ASR 模型实例 | 单用户 | V3 | LOW |
 | TD-4 | Redis 上下文更新非原子操作 | 竞态风险 | V2.1 | HIGH |
