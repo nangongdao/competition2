@@ -11,7 +11,10 @@ const AUDIO_CONFIG = {
   channelCount: 1,
   chunkDurationMs: 100,
   bufferSize: 2048,
-  workletModuleUrl: '/audio-capture-worklet.js',
+  workletModuleUrl: new URL(
+    `${import.meta.env.BASE_URL}audio-capture-worklet.js`,
+    window.location.href,
+  ).toString(),
 } as const
 
 const WORKLET_PROCESSOR_NAME = 'audio-capture-processor'

@@ -30,7 +30,11 @@ export interface AppState {
 type StateListener = (state: AppState) => void
 
 
-const WS_URL = `ws://${window.location.hostname}:8000/api/v1/ws/translate`
+const DEFAULT_BACKEND_HOST = '127.0.0.1'
+const DEFAULT_BACKEND_PORT = 8000
+
+
+const WS_URL = getWebSocketBaseUrl()
 
 
 const EMPTY_CLIENT_DIAGNOSTICS: ClientDiagnostics = {
@@ -297,6 +301,17 @@ function formatDiagnosticsText(
   )
 
   return lines.join('\n')
+}
+
+
+function getWebSocketBaseUrl(): string {
+  const configuredUrl = import.meta.env.VITE_WS_URL
+  if (configuredUrl) {
+    return configuredUrl.replace(/\/$/, '')
+  }
+
+  const hostname = window.location.hostname || DEFAULT_BACKEND_HOST
+  return `ws://${hostname}:${DEFAULT_BACKEND_PORT}/api/v1/ws/translate`
 }
 
 

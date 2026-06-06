@@ -11,6 +11,7 @@
 | [code-quality.md](./code-quality.md)   | Code quality mandatory rules         | Always                  |
 | [typescript.md](./typescript.md)       | TypeScript best practices            | Type-related decisions  |
 | [dependencies.md](./dependencies.md)   | Dependency versions and constraints  | Adding/updating deps    |
+| [desktop-launcher.md](./desktop-launcher.md) | Local desktop-style startup contract | Changing startup tooling |
 
 ---
 
@@ -21,6 +22,7 @@
 | Code quality rules          | [code-quality.md](./code-quality.md)   |
 | Type annotations            | [typescript.md](./typescript.md)       |
 | Dependency management       | [dependencies.md](./dependencies.md)   |
+| Desktop-style startup       | [desktop-launcher.md](./desktop-launcher.md) |
 
 ---
 
