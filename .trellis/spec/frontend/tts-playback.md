@@ -66,7 +66,9 @@ class AppController {
   must never be spoken.
 - Normalize whitespace before queueing speech text. Empty text increments
   `skippedUtterances` instead of speaking a blank utterance.
-- Clamp volume to `0..1` and rate to `0.7..1.35`.
+- Clamp volume to `0..1` and rate to `0.7..1.35`. Non-finite volume or
+  rate values must fall back to the default setting instead of storing `NaN`
+  or `Infinity`.
 - Revision handling:
   - If a revised segment is still queued, update the queued text.
   - If the revised segment is currently speaking or already spoken, do not replay
@@ -87,6 +89,7 @@ class AppController {
 | User disables voice | Active speech and queued speech are cancelled |
 | Translation token is partial | Do not enqueue speech |
 | Final translation text is empty | Increment skipped count and leave queue unchanged |
+| Volume/rate receives `NaN` or `Infinity` | Fall back to the default value and keep diagnostics usable |
 | Revision arrives for queued segment | Replace queued text with revised text |
 | Revision arrives for current/already-spoken segment | Do not replay automatically; increment skipped count |
 | Speech synthesis emits an error | Increment failed count, capture `lastError`, continue draining later queued items |
@@ -105,7 +108,11 @@ class AppController {
 
 ### 6. Tests Required
 
-- Run `npm.cmd run build` after changing TTS types, controls, or state wiring.
+- Run `npm.cmd run test` and `npm.cmd run build` after changing TTS types,
+  controls, or state wiring.
+- Automated frontend tests must cover queue update-on-revision,
+  skip-after-spoken revision behavior, volume/rate clamping, and non-finite
+  volume/rate fallback.
 - Manual browser/Electron smoke:
   - turn Voice on,
   - feed two finalized translated segments,
@@ -114,8 +121,6 @@ class AppController {
 - Manual unsupported-path smoke when possible by mocking/removing
   `window.speechSynthesis`: verify Voice is unavailable and diagnostics export
   reports unsupported.
-- For future automated frontend tests, assert queue update-on-revision,
-  skip-after-spoken revision behavior, and volume/rate clamping.
 
 ### 7. Wrong vs Correct
 

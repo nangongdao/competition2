@@ -30,11 +30,14 @@ Implemented product capabilities now include:
 - Diagnostics TXT download from the subtitle history panel.
 - Optional local Chinese voice playback through the browser/Electron Web Speech
   API, with queueing, volume control, rate control, and diagnostics.
+- Frontend unit tests for local TTS queue behavior and subtitle export formats.
 - Responsive control panel behavior for desktop, mobile, and narrow mobile widths.
 
 Recent validation:
 
+- `npm.cmd run test` in `frontend`.
 - `npm.cmd run build` in `frontend`.
+- `npm.cmd audit` in `frontend`.
 - `python -m unittest backend.test_endurance_runner`.
 - `python -m compileall tools backend/test_endurance_runner.py`.
 - `.\\backend\\.venv\\Scripts\\python.exe -m unittest discover backend`.
@@ -48,7 +51,7 @@ Recent validation:
 Recommended improvement sequence:
 
 1. Establish a real reliability baseline with 30-60 minute live endurance runs using Redis, Whisper, provider API keys, and `tools/endurance_runner.py`. Track queue depth, queue wait latency, queue drops, reconnects, subtitle ordering, memory growth, ASR latency, translation latency, revision latency, and API-call counts.
-2. Validate post-session artifacts in real sessions: confirm SRT/VTT timing, revised-segment markers, Markdown note readability, and unchanged TXT/diagnostics behavior.
+2. Validate post-session artifacts in real sessions: confirm SRT/VTT timing, revised-segment markers, Markdown note readability, and unchanged TXT/diagnostics behavior while keeping the frontend export unit tests green.
 3. Validate the new AudioWorklet capture path in real sessions and compare chunk stability, dropped chunks, and latency against the ScriptProcessor fallback.
 4. Validate the local Web Speech voice playback in real browser/Electron sessions, then decide whether the next TTS slice needs provider-backed synthesis, audio artifact caching, or backend delivery.
 5. Keep the Electron desktop launcher for local demos, but defer full packaged desktop/system-audio capture until the browser workflow has measurable stability. At that point, evaluate Electron/Tauri capture, packaging, and memory requirements against real sessions.

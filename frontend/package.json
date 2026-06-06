@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "test": "node --test --import tsx src/audio/TtsPlayer.test.ts src/subtitle/subtitle-export.test.ts",
     "build": "tsc && vite build",
     "desktop:window": "electron electron/main.cjs",
     "preview": "vite preview"
@@ -19,7 +20,8 @@
     "@types/react-dom": "^18.2.17",
     "@vitejs/plugin-react": "^4.2.1",
     "electron": "^42.3.3",
+    "tsx": "^4.22.4",
     "typescript": "^5.3.3",
-    "vite": "^5.0.8"
+    "vite": "^7.3.5"
   }
 }

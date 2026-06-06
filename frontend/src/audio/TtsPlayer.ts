@@ -95,7 +95,7 @@ export class TtsPlayer {
   setVolume(volume: number): void {
     this._settings = {
       ...this._settings,
-      volume: clamp(volume, MIN_VOLUME, MAX_VOLUME),
+      volume: clamp(volume, MIN_VOLUME, MAX_VOLUME, DEFAULT_TTS_SETTINGS.volume),
     }
     this._notifyDiagnostics()
   }
@@ -103,7 +103,7 @@ export class TtsPlayer {
   setRate(rate: number): void {
     this._settings = {
       ...this._settings,
-      rate: clamp(rate, MIN_RATE, MAX_RATE),
+      rate: clamp(rate, MIN_RATE, MAX_RATE, DEFAULT_TTS_SETTINGS.rate),
     }
     this._notifyDiagnostics()
   }
@@ -280,6 +280,7 @@ function pickChineseVoice(speech: SpeechSynthesis): SpeechSynthesisVoice | null 
 }
 
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value))
+function clamp(value: number, min: number, max: number, fallback: number): number {
+  const numericValue = Number.isFinite(value) ? value : fallback
+  return Math.min(max, Math.max(min, numericValue))
 }

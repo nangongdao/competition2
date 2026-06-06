@@ -135,6 +135,7 @@
 | Package | Version | Description |
 |---------|---------|-------------|
 | turbo | ^2.x | Monorepo build system |
+| vite | ^7.x | Frontend dev server and production bundler |
 | tsx | ^4.x | TypeScript executor |
 
 ### Code Quality
@@ -148,6 +149,7 @@
 
 | Package | Version | Description |
 |---------|---------|-------------|
+| tsx | ^4.x | TypeScript execution for Node-based frontend unit tests |
 | @playwright/test | ^1.x | E2E testing |
 
 ---
