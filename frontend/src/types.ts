@@ -104,6 +104,8 @@ export interface ControlMessage {
 
 export type SubtitleMode = 'bilingual' | 'translation_only' | 'source_only'
 
+export type AudioCaptureBackend = 'audio-worklet' | 'script-processor'
+
 export interface SubtitleEntry {
   segmentId: string
   sourceText: string
@@ -119,6 +121,7 @@ export type AppStatus = 'idle' | 'capturing' | 'translating' | 'error'
 
 export interface ClientDiagnostics {
   sessionId: string
+  captureBackend: AudioCaptureBackend | null
   sentAudioChunks: number
   droppedAudioChunks: number
   reconnectAttempts: number

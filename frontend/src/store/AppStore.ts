@@ -39,6 +39,7 @@ const WS_URL = getWebSocketBaseUrl()
 
 const EMPTY_CLIENT_DIAGNOSTICS: ClientDiagnostics = {
   sessionId: '',
+  captureBackend: null,
   sentAudioChunks: 0,
   droppedAudioChunks: 0,
   reconnectAttempts: 0,
@@ -72,12 +73,13 @@ export class AppController {
     this._subtitleStore = new SubtitleStore()
     this._state = {
       ...this._state,
-      clientDiagnostics: this._wsClient.diagnostics,
-      diagnosticsText: formatDiagnosticsText(this._wsClient.diagnostics, null),
+      clientDiagnostics: this._getClientDiagnostics(),
+      diagnosticsText: formatDiagnosticsText(this._getClientDiagnostics(), null),
     }
 
     this._audioCapture.setCallbacks({
       onStateChange: (state) => {
+        this._updateClientDiagnostics()
         if (state === 'error') {
           this._updateState({ status: 'error' })
         }
@@ -98,10 +100,7 @@ export class AppController {
         console.error('[AppController] websocket error', error)
       },
       onDiagnosticsChange: (diagnostics) => {
-        this._updateState({
-          clientDiagnostics: diagnostics,
-          diagnosticsText: formatDiagnosticsText(diagnostics, this._state.serverDiagnostics),
-        })
+        this._updateClientDiagnostics(diagnostics)
       },
     })
   }
@@ -149,8 +148,8 @@ export class AppController {
       asrRevisionCount: 0,
       lastRevisionReason: null,
       serverDiagnostics: null,
-      clientDiagnostics: this._wsClient.diagnostics,
-      diagnosticsText: formatDiagnosticsText(this._wsClient.diagnostics, null),
+      clientDiagnostics: this._getClientDiagnostics(),
+      diagnosticsText: formatDiagnosticsText(this._getClientDiagnostics(), null),
       subtitleHistory: [],
     })
   }
@@ -214,7 +213,7 @@ export class AppController {
         this._updateState({
           serverDiagnostics: message.diagnostics,
           diagnosticsText: formatDiagnosticsText(
-            this._state.clientDiagnostics,
+            this._getClientDiagnostics(),
             message.diagnostics,
           ),
         })
@@ -246,6 +245,21 @@ export class AppController {
     })
   }
 
+  private _getClientDiagnostics(diagnostics = this._wsClient.diagnostics): ClientDiagnostics {
+    return {
+      ...diagnostics,
+      captureBackend: this._audioCapture.captureBackend,
+    }
+  }
+
+  private _updateClientDiagnostics(diagnostics = this._wsClient.diagnostics): void {
+    const clientDiagnostics = this._getClientDiagnostics(diagnostics)
+    this._updateState({
+      clientDiagnostics,
+      diagnosticsText: formatDiagnosticsText(clientDiagnostics, this._state.serverDiagnostics),
+    })
+  }
+
   private _updateState(partial: Partial<AppState>): void {
     this._state = { ...this._state, ...partial }
     this._listeners.forEach((listener) => listener(this._state))
@@ -265,6 +279,7 @@ function formatDiagnosticsText(
     `Duration: ${server ? formatDuration(server.duration_ms) : '-'}`,
     '',
     'Client',
+    `Capture backend: ${formatCaptureBackend(client.captureBackend)}`,
     `Sent audio chunks: ${client.sentAudioChunks}`,
     `Dropped audio chunks: ${client.droppedAudioChunks}`,
     `Reconnect attempts: ${client.reconnectAttempts}`,
@@ -320,6 +335,18 @@ function formatDuration(durationMs: number): string {
     return `${durationMs}ms`
   }
   return `${(durationMs / 1000).toFixed(1)}s`
+}
+
+
+function formatCaptureBackend(backend: ClientDiagnostics['captureBackend']): string {
+  switch (backend) {
+    case 'audio-worklet':
+      return 'AudioWorklet'
+    case 'script-processor':
+      return 'ScriptProcessor fallback'
+    default:
+      return '-'
+  }
 }
 
 

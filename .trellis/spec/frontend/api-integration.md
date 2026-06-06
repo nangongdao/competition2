@@ -153,6 +153,8 @@ export interface AudioCaptureCallbacks {
   onStateChange: (state: AudioCaptureState) => void
   onAudioChunk: (chunk: ArrayBuffer) => void
 }
+
+export type AudioCaptureBackend = 'audio-worklet' | 'script-processor'
 ```
 
 #### 3. Contracts
@@ -167,6 +169,8 @@ export interface AudioCaptureCallbacks {
   from `src/`.
 - Preserve the existing WebSocket payload contract: flush buffered mono
   `Float32Array` PCM samples as `ArrayBuffer` chunks.
+- Expose the active capture backend through client diagnostics so real sessions
+  can compare AudioWorklet and ScriptProcessor fallback behavior.
 - Treat worklet `message` payloads as `unknown`, validate the shape, and avoid
   `any` or type-suppression comments.
 - On start failure, user media-track ending, or manual stop, clean up timers,
@@ -181,22 +185,28 @@ export interface AudioCaptureCallbacks {
 | Worklet module load fails | Warn once, disconnect partial worklet state, start fallback |
 | User stops sharing audio | Stop capture and emit `inactive` state |
 | Manual stop | Clear timers, nodes, context, media tracks, and buffered chunks |
+| Capture path starts successfully | Client diagnostics report `audio-worklet` or `script-processor` |
+| Capture is inactive, stopped, or failed | Client diagnostics report no active capture backend |
 
 #### 5. Good/Base/Bad Cases
 
 - Good: AudioWorklet starts, worklet messages are validated as `unknown`, and
-  buffered `Float32Array` samples flush through `onAudioChunk`.
+  buffered `Float32Array` samples flush through `onAudioChunk`; diagnostics
+  report `audio-worklet`.
 - Base: AudioWorklet fails in an unsupported browser and the same callback
-  contract continues through ScriptProcessor fallback.
+  contract continues through ScriptProcessor fallback; diagnostics report
+  `script-processor`.
 - Bad: capture code posts unvalidated worklet messages, drops cleanup on a failed
-  start, or sends a different WebSocket payload shape.
+  start, sends a different WebSocket payload shape, or leaves stale backend
+  labels in diagnostics after stop.
 
 #### 6. Tests Required
 
 - Run the frontend production build after changing capture code.
 - Verify unsupported or failed worklet loading falls back to `ScriptProcessorNode`.
 - In a real browser session, compare AudioWorklet and fallback diagnostics for
-  chunk count, dropped chunks, and latency before removing fallback behavior.
+  backend label, chunk count, dropped chunks, and latency before removing
+  fallback behavior.
 
 #### 7. Wrong vs Correct
 

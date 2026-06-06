@@ -21,8 +21,11 @@ Implemented capabilities now include:
 - Live session diagnostics for latency, dropped chunks, reconnects, revision counters, revision sources, revision triggers, and API-call counters.
 - Reconnect-safe frontend session IDs with per-session ASR stream state and revision cache isolation.
 - AudioWorklet-first browser audio capture with a ScriptProcessor fallback for unsupported browsers.
+- Client diagnostics now expose the active capture backend for AudioWorklet versus fallback validation.
 - Local WebSocket endurance runner that sends paced PCM audio and writes diagnostics JSON reports.
 - Electron desktop launcher that starts the built frontend, FastAPI backend, and a native desktop window from a double-click entry.
+- Electron single-instance, tray restore, minimize-to-tray, and startup-log menu behavior for a more software-like local desktop experience.
+- Windows desktop shortcut installer scripts for desktop launching.
 - Durable subtitle history that is separate from the visible subtitle list.
 - Subtitle history panel with transcript copy and TXT download.
 - SRT subtitle export, VTT subtitle export, and Markdown learning-note export from subtitle history.
@@ -45,8 +48,8 @@ Known gaps after the implemented slice:
 
 - The project now has a local endurance runner, but still needs a true 30-60 minute live run with Redis, Whisper, and provider API keys.
 - Export coverage now includes TXT transcript, SRT subtitles, VTT subtitles, Markdown learning notes, and diagnostics downloads; the new artifact formats still need real-session timing and readability validation.
-- Browser audio capture now defaults to `AudioWorklet`; the new path still needs real-session comparison against the ScriptProcessor fallback for chunk stability, dropped chunks, and latency.
-- Chinese TTS playback and full desktop/system-audio capture remain intentionally deferred until the browser flow has measurable stability. The current desktop launcher is a local startup experience, not a packaged system-audio capture client.
+- Browser audio capture now defaults to `AudioWorklet`, and diagnostics show the active backend; the new path still needs real-session comparison against the ScriptProcessor fallback for chunk stability, dropped chunks, and latency.
+- Chinese TTS playback and full desktop/system-audio capture remain intentionally deferred until the browser flow has measurable stability. The current desktop launcher is a local startup experience with tray and shortcut support, not a packaged system-audio capture client.
 
 ## Priority Improvement Directions - 2026-06-06
 
@@ -54,7 +57,7 @@ The next roadmap slice should make the existing V2 workflow measurable and depen
 
 1. **Reliability and observability baseline**: run 30-60 minute live sessions with `tools/endurance_runner.py` and record queue drops, reconnects, subtitle ordering, memory growth, ASR latency, translation latency, revision latency, revision sources, and API-call counts.
 2. **Export validation and artifact refinement**: validate SRT/VTT timing, revised-segment markers, Markdown note readability, and unchanged TXT/diagnostics behavior in real sessions.
-3. **Browser audio-capture validation**: validate the AudioWorklet capture path in real sessions and compare chunk stability, dropped chunks, and latency against the ScriptProcessor fallback.
+3. **Browser audio-capture validation**: validate the AudioWorklet capture path in real sessions and compare the recorded capture backend, chunk stability, dropped chunks, and latency against the ScriptProcessor fallback.
 4. **Chinese TTS playback**: add TTS after reliability and export baselines are stable. The first TTS slice should include playback queueing, volume control, latency tracking, and correction handling for already-spoken subtitles.
 5. **Desktop/system-audio capture**: keep the Electron desktop launcher for demos, but defer full desktop/system-audio capture until the browser workflow is stable. Evaluate Electron/Tauri using real requirements for system-audio capture, packaging size, memory usage, and cross-platform support.
 6. **Later expansion**: keep multi-language input, glossary support, and learning-assistant features behind the reliability/export/TTS work so core live interpretation quality remains the priority.

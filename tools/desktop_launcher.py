@@ -335,6 +335,7 @@ def launch_desktop_window(url: str) -> subprocess.Popen[str]:
     command = [str(electron_executable), str(ELECTRON_MAIN)]
     env = os.environ.copy()
     env["AI_INTERPRETER_DESKTOP_URL"] = url
+    env["AI_INTERPRETER_LOG_FILE"] = str(LOG_FILE)
 
     write_log(f"Launching Electron desktop window: {' '.join(command)}")
     process = subprocess.Popen(

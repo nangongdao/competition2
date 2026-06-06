@@ -80,6 +80,7 @@ export interface SessionDiagnosticsMessage {
 
 export interface ClientDiagnostics {
   sessionId: string
+  captureBackend: 'audio-worklet' | 'script-processor' | null
   sentAudioChunks: number
   droppedAudioChunks: number
   reconnectAttempts: number
@@ -95,6 +96,8 @@ WebSocket session ID:
 - Frontend generates a stable 8-character session ID for a running capture session.
 - Frontend connects to `/api/v1/ws/translate/{session_id}` so reconnects reuse the same server session context.
 - `WsClient.resetSession()` must be called for a user-initiated stop/new run so a fresh session ID is used.
+- Frontend client diagnostics should include the active browser capture backend
+  while capture is running and clear it when capture stops or fails.
 
 Backend session isolation:
 

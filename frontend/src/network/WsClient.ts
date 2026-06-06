@@ -36,6 +36,7 @@ export class WsClient {
     this._url = appendSessionId(baseUrl, sessionId)
     this._diagnostics = {
       sessionId,
+      captureBackend: null,
       sentAudioChunks: 0,
       droppedAudioChunks: 0,
       reconnectAttempts: 0,
@@ -135,6 +136,7 @@ export class WsClient {
     this._retryCount = 0
     this._diagnostics = {
       sessionId,
+      captureBackend: null,
       sentAudioChunks: 0,
       droppedAudioChunks: 0,
       reconnectAttempts: 0,

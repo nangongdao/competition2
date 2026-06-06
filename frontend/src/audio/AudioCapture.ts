@@ -6,6 +6,8 @@
  * ScriptProcessorNode to keep the current demo flow usable.
  */
 
+import type { AudioCaptureBackend } from '../types'
+
 const AUDIO_CONFIG = {
   sampleRate: 16000,
   channelCount: 1,
@@ -19,8 +21,6 @@ const AUDIO_CONFIG = {
 
 const WORKLET_PROCESSOR_NAME = 'audio-capture-processor'
 const WORKLET_MESSAGE_TYPE = 'audio-chunk'
-
-type CaptureBackend = 'audio-worklet' | 'script-processor'
 
 export type AudioCaptureState = 'inactive' | 'active' | 'error'
 
@@ -44,7 +44,7 @@ export class AudioCapture {
   private _callbacks: AudioCaptureCallbacks | null = null
   private _chunkTimer: ReturnType<typeof setInterval> | null = null
   private _chunkBuffer: Float32Array[] = []
-  private _captureBackend: CaptureBackend | null = null
+  private _captureBackend: AudioCaptureBackend | null = null
 
   private readonly _handleAudioTrackEnded = (): void => {
     if (this._state === 'active') {
@@ -56,7 +56,7 @@ export class AudioCapture {
     return this._state
   }
 
-  get captureBackend(): CaptureBackend | null {
+  get captureBackend(): AudioCaptureBackend | null {
     return this._captureBackend
   }
 

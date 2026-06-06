@@ -283,6 +283,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
           }}
         >
           <DetailRow label="Session" value={serverDiagnostics?.session_id ?? clientDiagnostics.sessionId} />
+          <DetailRow label="Capture" value={formatCaptureBackend(clientDiagnostics.captureBackend)} />
           <DetailRow label="Sent chunks" value={clientDiagnostics.sentAudioChunks.toString()} />
           <DetailRow label="Client drops" value={clientDiagnostics.droppedAudioChunks.toString()} />
           <DetailRow label="Server drops" value={(serverDiagnostics?.audio_chunks_dropped ?? 0).toString()} />
@@ -336,6 +337,18 @@ function formatLatency(summary: { count: number; avg_ms: number; max_ms: number 
     return '-'
   }
   return `${summary.avg_ms}ms avg`
+}
+
+
+function formatCaptureBackend(backend: ClientDiagnostics['captureBackend']): string {
+  switch (backend) {
+    case 'audio-worklet':
+      return 'AudioWorklet'
+    case 'script-processor':
+      return 'ScriptProcessor'
+    default:
+      return '-'
+  }
 }
 
 

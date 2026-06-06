@@ -17,8 +17,11 @@ Implemented product capabilities now include:
 - Live session diagnostics for latency, dropped chunks, reconnects, revision counters, and API call counters.
 - Reconnect-safe frontend session IDs with per-session ASR stream state and revision cache isolation.
 - AudioWorklet-first browser audio capture with a ScriptProcessor fallback for unsupported browsers.
+- Client diagnostics show which capture backend is active so AudioWorklet and fallback sessions can be compared.
 - Local WebSocket endurance runner for sending paced PCM audio and collecting diagnostics JSON reports.
 - Electron desktop launcher that starts the built frontend, FastAPI backend, and a native desktop window from a double-click entry.
+- Electron single-instance, tray restore, minimize-to-tray, and startup-log menu behavior for a more software-like local desktop experience.
+- Windows desktop shortcut installer scripts for launching the app from the desktop.
 - Durable subtitle history separated from the short visible subtitle list.
 - Transcript copy and TXT download from the subtitle history panel.
 - SRT subtitle export, VTT subtitle export, and Markdown learning-note export from
@@ -54,9 +57,18 @@ On Windows, double-click `start-desktop.cmd` from the project root. The launcher
 2. Serves the built frontend from a local static server.
 3. Starts the FastAPI backend from `backend/.venv` when port `8000` is not already healthy.
 4. Opens the UI in an Electron `BrowserWindow`, not in a browser app-mode tab.
-5. Stops the services it started when the app window exits.
+5. Keeps a single app instance, supports tray restore, and hides to tray when minimized.
+6. Stops the services it started when the app window exits.
 
 Startup logs are written to `logs/desktop-launcher.log`. Override paths or ports with `AI_INTERPRETER_PYTHON`, `AI_INTERPRETER_BACKEND_PORT`, or `AI_INTERPRETER_FRONTEND_PORT` when needed.
+
+To create a Windows desktop shortcut, run:
+
+```powershell
+.\install-desktop-shortcut.cmd
+```
+
+The shortcut starts `start-desktop.ps1` through a hidden PowerShell process and opens the Electron desktop window.
 
 ## Reliability Baseline Tool
 
