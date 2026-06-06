@@ -19,3 +19,17 @@ If you're using Codex or another agent-capable tool, additional project-scoped h
 Managed by Trellis. Edits outside this block are preserved; edits inside may be overwritten by a future `trellis update`.
 
 <!-- TRELLIS:END -->
+
+## Project Delivery Requirements
+
+After completing any upgrade or feature, publish the completed work to the project repository at `https://github.com/nangongdao/competition2`.
+
+Use meaningful Conventional Commit messages so the history explains the work clearly. Good examples include:
+
+- `feat: 完成用户登录模块`
+- `fix: 修复数据展示错误`
+- `docs: 更新项目提交和 PR 流程`
+
+Project submissions must be delivered through a Pull Request (PR). Follow the activity guidance for the target repository, open the PR against the appropriate branch, and include the day's progress in the PR description.
+
+Before opening a PR, make sure the submitted branch contains only the relevant changes for that upgrade or feature and that validation commands have been run where applicable.

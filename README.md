@@ -40,6 +40,13 @@ Recommended follow-up iterations:
 
 ## Iteration Workflow
 
-Use meaningful Conventional Commit messages, for example `feat: add subtitle history export` or `fix: prevent mobile control panel overflow`.
+Each completed upgrade or feature must leave a meaningful commit record and be submitted through a Pull Request.
 
-Feature work should be pushed to a feature branch and merged through a Pull Request. The PR description should summarize the day's progress, validation commands, and remaining risks or follow-up work.
+Required workflow:
+
+1. Commit the finished upgrade or feature with a meaningful Conventional Commit message, such as `feat: 完成用户登录模块`, `fix: 修复数据展示错误`, or `docs: 更新项目提交和 PR 流程`.
+2. Push the branch to `https://github.com/nangongdao/competition2`.
+3. Open a Pull Request according to the activity guidance for the repository.
+4. In the PR description, summarize the day's progress, validation commands, and any remaining risks or follow-up work.
+
+Keep each PR focused on one upgrade or feature whenever possible, and avoid including unrelated local changes.
