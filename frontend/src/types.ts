@@ -35,6 +35,12 @@ export interface RevisionMessage {
   new_text: string
   source_text?: string
   reason: RevisionReason
+  old_text?: string
+  old_source_text?: string
+  correction_source?: string
+  trigger?: string
+  latency_ms?: number
+  confidence?: number
 }
 
 export interface StatusMessage {

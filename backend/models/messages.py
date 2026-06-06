@@ -23,6 +23,11 @@ class ServerMessage:
     new_text: Optional[str] = None
     source_text: Optional[str] = None
     reason: Optional[Literal["asr_correction", "translation_correction"]] = None
+    old_text: Optional[str] = None
+    old_source_text: Optional[str] = None
+    correction_source: Optional[str] = None
+    trigger: Optional[str] = None
+    latency_ms: Optional[int] = None
     code: Optional[str] = None
     message: Optional[str] = None
     timestamp: float = field(default_factory=time.time)

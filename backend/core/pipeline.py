@@ -10,7 +10,7 @@ from models.segment import Segment
 from services.asr_service import ASRService
 from services.context_manager import ContextManager
 from services.nmt_service import NMTService
-from services.revision_service import RevisionService
+from services.revision_service import RevisionResult, RevisionService
 
 
 MessageCallback = Callable[[dict], Awaitable[None]]
@@ -68,7 +68,7 @@ class Pipeline:
         await self._asr.process_chunk(audio_chunk)
 
     async def trigger_manual_revision(self) -> None:
-        await self._check_revision(force=True, trigger_segment=None)
+        await self._check_revision(force=True, trigger_segment=None, trigger="manual")
 
     async def _handle_asr_partial(self, text: str) -> None:
         if self._on_message:
@@ -89,10 +89,11 @@ class Pipeline:
         )
         self._sentence_count += 1
         await self._ctx.add_segment(self.session_id, segment)
+        segment_audio = self._asr.get_last_audio_chunk()
         await self._ctx.save_audio_chunk(
             self.session_id,
             segment.id,
-            self._asr.get_last_audio_chunk(),
+            segment_audio,
         )
 
         if self._on_message:
@@ -119,12 +120,15 @@ class Pipeline:
         segment.text_translated = self._nmt.last_translation
         segment.status = "final"
         await self._ctx.update_segment(self.session_id, segment)
+        cached_audio = await self._ctx.get_audio_chunk(self.session_id, segment.id)
 
         asr_revision = await self._revision.check_asr_correction(
             segment,
             context_window,
             self._nmt,
             self._asr,
+            audio_chunk=cached_audio,
+            trigger="low_confidence",
         ) if self._revision else None
 
         if asr_revision:
@@ -139,15 +143,9 @@ class Pipeline:
                 asr_revision.new_text,
             )
             if self._on_message:
-                await self._on_message({
-                    "type": "revision",
-                    "segment_id": asr_revision.segment_id,
-                    "new_text": asr_revision.new_text,
-                    "source_text": asr_revision.source_text,
-                    "reason": asr_revision.reason,
-                })
+                await self._on_message(self._revision_to_message(asr_revision))
 
-        await self._check_revision(force=False, trigger_segment=segment)
+        await self._check_revision(force=False, trigger_segment=segment, trigger="asr_final")
 
     def _reset_silence_timer(self) -> None:
         if self._silence_task:
@@ -162,7 +160,7 @@ class Pipeline:
 
             now = asyncio.get_running_loop().time()
             if now - self._last_audio_at >= settings.revision_silence_seconds:
-                await self._check_revision(force=True, trigger_segment=None)
+                await self._check_revision(force=True, trigger_segment=None, trigger="silence")
         except asyncio.CancelledError:
             return
 
@@ -170,11 +168,13 @@ class Pipeline:
         self,
         force: bool,
         trigger_segment: Segment | None,
+        trigger: str,
     ) -> None:
         if not self._revision or not settings.revision_enabled:
             return
 
         ambiguity_triggered = self._revision.has_semantic_ambiguity(trigger_segment)
+        active_trigger = trigger
 
         if not force and not ambiguity_triggered:
             should_trigger = (
@@ -183,6 +183,9 @@ class Pipeline:
             )
             if not should_trigger:
                 return
+            active_trigger = "sentence_count"
+        elif ambiguity_triggered:
+            active_trigger = "semantic_ambiguity"
 
         context_window = await self._ctx.get_window(self.session_id)
         revisions = await self._revision.check_and_revise(
@@ -190,17 +193,12 @@ class Pipeline:
             self._nmt,
             force=force,
             trigger_segment=trigger_segment,
+            trigger=active_trigger,
         )
 
         for rev in revisions:
             if self._on_message:
-                await self._on_message({
-                    "type": "revision",
-                    "segment_id": rev.segment_id,
-                    "new_text": rev.new_text,
-                    "source_text": rev.source_text,
-                    "reason": rev.reason,
-                })
+                await self._on_message(self._revision_to_message(rev))
             if rev.source_text:
                 await self._ctx.update_source_text(
                     self.session_id,
@@ -212,3 +210,19 @@ class Pipeline:
                 rev.segment_id,
                 rev.new_text,
             )
+
+    def _revision_to_message(self, revision: RevisionResult) -> dict:
+        message = {
+            "type": "revision",
+            "segment_id": revision.segment_id,
+            "new_text": revision.new_text,
+            "source_text": revision.source_text,
+            "reason": revision.reason,
+            "old_text": revision.old_text,
+            "old_source_text": revision.old_source_text,
+            "correction_source": revision.correction_source,
+            "trigger": revision.trigger,
+            "latency_ms": revision.latency_ms,
+            "confidence": revision.confidence,
+        }
+        return {key: value for key, value in message.items() if value is not None}
