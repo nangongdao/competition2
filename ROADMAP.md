@@ -22,7 +22,7 @@ Implemented capabilities now include:
 - Reconnect-safe frontend session IDs with per-session ASR stream state and revision cache isolation.
 - AudioWorklet-first browser audio capture with a ScriptProcessor fallback for unsupported browsers.
 - Local WebSocket endurance runner that sends paced PCM audio and writes diagnostics JSON reports.
-- Desktop-style local launcher that starts the built frontend, FastAPI backend, and an app-mode browser window without adding a large desktop runtime.
+- Electron desktop launcher that starts the built frontend, FastAPI backend, and a native desktop window from a double-click entry.
 - Durable subtitle history that is separate from the visible subtitle list.
 - Subtitle history panel with transcript copy and TXT download.
 - SRT subtitle export, VTT subtitle export, and Markdown learning-note export from subtitle history.
@@ -56,7 +56,7 @@ The next roadmap slice should make the existing V2 workflow measurable and depen
 2. **Export validation and artifact refinement**: validate SRT/VTT timing, revised-segment markers, Markdown note readability, and unchanged TXT/diagnostics behavior in real sessions.
 3. **Browser audio-capture validation**: validate the AudioWorklet capture path in real sessions and compare chunk stability, dropped chunks, and latency against the ScriptProcessor fallback.
 4. **Chinese TTS playback**: add TTS after reliability and export baselines are stable. The first TTS slice should include playback queueing, volume control, latency tracking, and correction handling for already-spoken subtitles.
-5. **Desktop/system-audio capture**: keep the lightweight desktop launcher for demos, but defer full desktop/system-audio capture until the browser workflow is stable. Evaluate Tauri or Electron using real requirements for system-audio capture, packaging size, memory usage, and cross-platform support.
+5. **Desktop/system-audio capture**: keep the Electron desktop launcher for demos, but defer full desktop/system-audio capture until the browser workflow is stable. Evaluate Electron/Tauri using real requirements for system-audio capture, packaging size, memory usage, and cross-platform support.
 6. **Later expansion**: keep multi-language input, glossary support, and learning-assistant features behind the reliability/export/TTS work so core live interpretation quality remains the priority.
 
 ---

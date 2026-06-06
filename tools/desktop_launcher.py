@@ -1,8 +1,9 @@
-"""Desktop-style launcher for the local AI Interpreter app.
+"""Desktop launcher for the local AI Interpreter app.
 
-The launcher keeps the project lightweight: it serves the built Vite frontend,
-starts the FastAPI backend when needed, and opens Edge/Chrome in app mode so the
-user gets a native-window feel without adding a large desktop runtime.
+The launcher serves the built Vite frontend, starts the FastAPI backend when
+needed, and opens the UI in an Electron BrowserWindow. The Python process owns
+service lifecycle so backend/static services are cleaned up when the desktop
+window exits.
 """
 
 from __future__ import annotations
@@ -16,16 +17,15 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-import tempfile
 import threading
 import time
-import webbrowser
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 BACKEND_DIR = PROJECT_ROOT / "backend"
 FRONTEND_DIR = PROJECT_ROOT / "frontend"
 DIST_DIR = FRONTEND_DIR / "dist"
+ELECTRON_MAIN = FRONTEND_DIR / "electron" / "main.cjs"
 LOG_DIR = PROJECT_ROOT / "logs"
 LOG_FILE = LOG_DIR / "desktop-launcher.log"
 
@@ -307,61 +307,53 @@ def start_frontend_server(port: int) -> tuple[http.server.ThreadingHTTPServer, s
     return server, url
 
 
-def windows_browser_candidates() -> list[Path]:
-    candidates: list[Path] = []
-    for env_name in ("ProgramFiles", "ProgramFiles(x86)", "LocalAppData"):
-        base = os.environ.get(env_name)
-        if not base:
-            continue
-        root = Path(base)
-        candidates.extend(
-            [
-                root / "Microsoft" / "Edge" / "Application" / "msedge.exe",
-                root / "Google" / "Chrome" / "Application" / "chrome.exe",
-            ]
-        )
-    return candidates
-
-
-def resolve_app_browser() -> str | None:
-    configured = os.environ.get("AI_INTERPRETER_BROWSER")
-    if configured:
-        return configured
-
+def electron_command() -> Path:
     if sys.platform == "win32":
-        for candidate in windows_browser_candidates():
-            if candidate.exists():
-                return str(candidate)
-
-    for name in ("msedge", "microsoft-edge", "google-chrome", "chrome", "chromium"):
-        resolved = shutil.which(name)
-        if resolved:
-            return resolved
-
-    return None
+        return FRONTEND_DIR / "node_modules" / ".bin" / "electron.cmd"
+    return FRONTEND_DIR / "node_modules" / ".bin" / "electron"
 
 
-def launch_browser_app(url: str, profile_dir: Path) -> subprocess.Popen[str] | None:
-    browser = resolve_app_browser()
-    if browser is None:
-        write_log("No app-mode browser found; falling back to default browser")
-        webbrowser.open(url)
-        return None
+def ensure_desktop_runtime() -> Path:
+    executable = electron_command()
+    if executable.exists():
+        return executable
 
-    command = [
-        browser,
-        f"--app={url}",
-        f"--user-data-dir={profile_dir}",
-        "--no-first-run",
-        "--disable-extensions",
-    ]
-    write_log(f"Launching browser app: {' '.join(command)}")
-    return subprocess.Popen(
+    write_log("Electron runtime missing; running npm install")
+    run_command([npm_command(), "install"], FRONTEND_DIR)
+
+    if executable.exists():
+        return executable
+
+    raise LauncherError("Electron runtime is missing after npm install")
+
+
+def launch_desktop_window(url: str) -> subprocess.Popen[str]:
+    electron_executable = ensure_desktop_runtime()
+    if not ELECTRON_MAIN.exists():
+        raise LauncherError(f"Electron main process file is missing: {ELECTRON_MAIN}")
+
+    command = [str(electron_executable), str(ELECTRON_MAIN)]
+    env = os.environ.copy()
+    env["AI_INTERPRETER_DESKTOP_URL"] = url
+
+    write_log(f"Launching Electron desktop window: {' '.join(command)}")
+    process = subprocess.Popen(
         command,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        cwd=FRONTEND_DIR,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
         creationflags=CREATE_NO_WINDOW,
     )
+    threading.Thread(
+        target=stream_process_output,
+        args=(process, "electron"),
+        daemon=True,
+    ).start()
+    return process
 
 
 def terminate_process(process: subprocess.Popen[str]) -> None:
@@ -374,15 +366,6 @@ def terminate_process(process: subprocess.Popen[str]) -> None:
     except subprocess.TimeoutExpired:
         process.kill()
         process.wait(timeout=5)
-
-
-def wait_without_browser_process() -> None:
-    write_log("Waiting until interrupted because browser process is not trackable")
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        write_log("Launcher interrupted")
 
 
 def parse_args() -> argparse.Namespace:
@@ -419,7 +402,6 @@ def main() -> int:
     splash = SplashWindow(enabled=not args.no_splash)
     backend_process: subprocess.Popen[str] | None = None
     frontend_server: http.server.ThreadingHTTPServer | None = None
-    profile_dir = Path(tempfile.mkdtemp(prefix="ai-interpreter-desktop-"))
 
     try:
         splash.set_status("Preparing frontend")
@@ -432,13 +414,9 @@ def main() -> int:
         backend_process = start_backend(args.backend_port)
 
         splash.set_status("Opening app window")
-        browser_process = launch_browser_app(frontend_url, profile_dir)
+        desktop_process = launch_desktop_window(frontend_url)
         splash.close()
-
-        if browser_process is None:
-            wait_without_browser_process()
-        else:
-            browser_process.wait()
+        desktop_process.wait()
 
         return 0
     except LauncherError as error:
@@ -455,8 +433,6 @@ def main() -> int:
         if backend_process is not None:
             terminate_process(backend_process)
             write_log("Backend process stopped")
-
-        shutil.rmtree(profile_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":

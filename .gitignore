@@ -13,6 +13,8 @@ __pycache__/
 node_modules/
 dist/
 logs/
+.npm-cache/
+.electron-cache/
 
 .trellis/.runtime/
 .trellis/workspace/

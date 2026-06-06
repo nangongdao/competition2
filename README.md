@@ -18,7 +18,7 @@ Implemented product capabilities now include:
 - Reconnect-safe frontend session IDs with per-session ASR stream state and revision cache isolation.
 - AudioWorklet-first browser audio capture with a ScriptProcessor fallback for unsupported browsers.
 - Local WebSocket endurance runner for sending paced PCM audio and collecting diagnostics JSON reports.
-- Desktop-style local launcher that starts the built frontend, FastAPI backend, and an app-mode browser window from a double-click entry.
+- Electron desktop launcher that starts the built frontend, FastAPI backend, and a native desktop window from a double-click entry.
 - Durable subtitle history separated from the short visible subtitle list.
 - Transcript copy and TXT download from the subtitle history panel.
 - SRT subtitle export, VTT subtitle export, and Markdown learning-note export from
@@ -44,7 +44,7 @@ Recommended improvement sequence:
 2. Validate post-session artifacts in real sessions: confirm SRT/VTT timing, revised-segment markers, Markdown note readability, and unchanged TXT/diagnostics behavior.
 3. Validate the new AudioWorklet capture path in real sessions and compare chunk stability, dropped chunks, and latency against the ScriptProcessor fallback.
 4. Add Chinese TTS playback only after the reliability and export baselines are stable. The TTS slice should include playback queueing, volume control, and a clear strategy for revised subtitles.
-5. Keep the lightweight desktop launcher for local demos, but defer full packaged desktop/system-audio capture until the browser workflow has measurable stability. At that point, evaluate Tauri or Electron against real capture, packaging, and memory requirements.
+5. Keep the Electron desktop launcher for local demos, but defer full packaged desktop/system-audio capture until the browser workflow has measurable stability. At that point, evaluate Electron/Tauri capture, packaging, and memory requirements against real sessions.
 
 ## Desktop-Style Startup
 
@@ -53,10 +53,10 @@ On Windows, double-click `start-desktop.cmd` from the project root. The launcher
 1. Builds the Vite frontend when needed.
 2. Serves the built frontend from a local static server.
 3. Starts the FastAPI backend from `backend/.venv` when port `8000` is not already healthy.
-4. Opens Microsoft Edge or Chrome in app mode, which removes the normal browser chrome.
+4. Opens the UI in an Electron `BrowserWindow`, not in a browser app-mode tab.
 5. Stops the services it started when the app window exits.
 
-Startup logs are written to `logs/desktop-launcher.log`. Override paths or ports with `AI_INTERPRETER_PYTHON`, `AI_INTERPRETER_BROWSER`, `AI_INTERPRETER_BACKEND_PORT`, or `AI_INTERPRETER_FRONTEND_PORT` when needed.
+Startup logs are written to `logs/desktop-launcher.log`. Override paths or ports with `AI_INTERPRETER_PYTHON`, `AI_INTERPRETER_BACKEND_PORT`, or `AI_INTERPRETER_FRONTEND_PORT` when needed.
 
 ## Reliability Baseline Tool
 

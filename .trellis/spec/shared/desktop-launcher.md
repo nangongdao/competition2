@@ -1,18 +1,17 @@
 # Desktop Launcher Contract
 
-This project uses a lightweight desktop-style launcher instead of a packaged
-desktop runtime for the current local demo workflow.
+This project uses an Electron desktop launcher for the current local demo
+workflow. The launcher is a real desktop window, not a browser app-mode tab.
 
 ## Scenario: Desktop-Style Local Startup
 
 ### 1. Scope / Trigger
 
-- Trigger: changes to `tools/desktop_launcher.py`, `start-desktop.cmd`,
-  `start-desktop.ps1`, frontend build paths, backend startup ports, or local
-  browser app-mode behavior.
-- Scope: local Windows-first startup experience. This is not a packaged desktop
-  client and does not replace the later Tauri/Electron system-audio capture
-  evaluation.
+- Trigger: changes to `tools/desktop_launcher.py`, `frontend/electron/main.cjs`,
+  `start-desktop.cmd`, `start-desktop.ps1`, frontend build paths, backend
+  startup ports, or Electron window behavior.
+- Scope: local Windows-first startup experience. This is not yet a packaged
+  installer and does not replace the later system-audio capture evaluation.
 
 ### 2. Signatures
 
@@ -20,13 +19,15 @@ desktop runtime for the current local demo workflow.
 start-desktop.cmd
 powershell.exe -File start-desktop.ps1
 python tools/desktop_launcher.py [--build] [--backend-port PORT] [--frontend-port PORT] [--no-splash]
+npm run desktop:window --prefix frontend
 ```
 
 ```python
 def ensure_frontend_build(force_build: bool) -> None: ...
 def start_backend(port: int) -> subprocess.Popen[str] | None: ...
 def start_frontend_server(port: int) -> tuple[http.server.ThreadingHTTPServer, str]: ...
-def launch_browser_app(url: str, profile_dir: Path) -> subprocess.Popen[str] | None: ...
+def ensure_desktop_runtime() -> Path: ...
+def launch_desktop_window(url: str) -> subprocess.Popen[str]: ...
 ```
 
 ### 3. Contracts
@@ -41,8 +42,9 @@ def launch_browser_app(url: str, profile_dir: Path) -> subprocess.Popen[str] | N
   default.
 - The launcher starts the FastAPI backend on `127.0.0.1:8000` only when
   `/api/v1/health` is not already returning HTTP 200.
-- The launcher opens Edge or Chrome with `--app=<frontend-url>` and an isolated
-  temporary browser profile.
+- The launcher opens Electron with `AI_INTERPRETER_DESKTOP_URL=<frontend-url>`.
+- Electron must render the app in a `BrowserWindow` with `nodeIntegration:
+  false`, `contextIsolation: true`, and `sandbox: true`.
 - The launcher must stop only processes it started. If the backend was already
   healthy before launch, leave that external backend running.
 - Startup logs go to `logs/desktop-launcher.log`, and `logs/` must stay ignored
@@ -53,9 +55,9 @@ Environment keys:
 | Key | Purpose |
 | --- | --- |
 | `AI_INTERPRETER_PYTHON` | Override Python executable for backend startup |
-| `AI_INTERPRETER_BROWSER` | Override app-mode browser executable |
 | `AI_INTERPRETER_BACKEND_PORT` | Override backend port |
 | `AI_INTERPRETER_FRONTEND_PORT` | Override static frontend port, or `0` for any available port |
+| `AI_INTERPRETER_DESKTOP_URL` | Internal Electron URL injected by the Python launcher |
 | `VITE_WS_URL` | Override frontend WebSocket base URL at build time |
 
 ### 4. Validation & Error Matrix
@@ -67,26 +69,29 @@ Environment keys:
 | Backend health endpoint is already HTTP 200 | Reuse existing backend and do not terminate it on launcher exit |
 | Backend process exits before health check | Show startup error and write details to launcher log |
 | Backend health timeout expires | Terminate the backend process started by the launcher |
-| Edge/Chrome is unavailable | Fall back to the default browser and keep services alive until interruption |
+| Electron runtime is missing | Run `npm install` in `frontend`; fail with a logged error if Electron is still unavailable |
+| Electron main file is missing | Fail with a logged startup error |
 | Startup fails while splash is visible | Close splash and show an error dialog when Tk is available |
 
 ### 5. Good/Base/Bad Cases
 
 - Good: double-click `start-desktop.cmd`, a splash appears, local services start,
-  and an app-mode Edge/Chrome window opens without a terminal window.
+  and an Electron desktop window opens without a terminal window.
 - Base: backend is already running on `127.0.0.1:8000`; launcher serves frontend
   and opens the app window without owning the backend process.
 - Bad: launcher always kills port `8000` on exit, assumes a hard-coded browser
-  path, or opens a normal browser tab with address bar as the primary path.
+  path, or opens a normal browser tab/app-mode window as the primary path.
 
 ### 6. Tests Required
 
 - Run `python tools/desktop_launcher.py --help` after changing CLI arguments.
 - Run `python -m compileall tools/desktop_launcher.py` after changing launcher
   code.
+- Run `.\frontend\node_modules\.bin\electron.cmd --version` or another Electron
+  CLI smoke check after changing Electron dependency wiring.
 - Run `npm.cmd run build` in `frontend` after changing Vite base paths,
   `index.html`, public assets, or `import.meta.env` usage.
-- For a manual smoke test, run `start-desktop.cmd`, verify the app-mode window
+- For a manual smoke test, run `start-desktop.cmd`, verify the Electron window
   opens, then close it and confirm launcher-owned backend/static services stop.
 
 ### 7. Wrong vs Correct
@@ -111,4 +116,4 @@ Start-Process `
 ```
 
 This delegates lifecycle management to `tools/desktop_launcher.py`, which owns
-build, service startup, app-mode launch, logging, and cleanup.
+build, service startup, Electron launch, logging, and cleanup.
