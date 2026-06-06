@@ -39,3 +39,36 @@ Added durable subtitle history/export UI, synced project progress docs, pushed t
 ### Next Steps
 
 - None - task complete
+
+
+## Session 2: AI interpreter P1 P2 reliability upgrades
+
+**Date**: 2026-06-06
+**Task**: AI interpreter P1 P2 reliability upgrades
+**Branch**: `feat/roadmap-big-question-upgrades`
+
+### Summary
+
+Implemented live session diagnostics, reconnect-safe session IDs, per-session ASR/revision isolation, bounded audio queue cancellation, frontend diagnostics display/export, and updated specs/docs.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ab03244` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
