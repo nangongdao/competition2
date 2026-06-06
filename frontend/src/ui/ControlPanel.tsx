@@ -1,6 +1,12 @@
 import React, { useEffect, useState } from 'react'
 
-import type { AppStatus, RevisionReason, SubtitleMode } from '../types'
+import type {
+  AppStatus,
+  ClientDiagnostics,
+  RevisionReason,
+  SessionDiagnostics,
+  SubtitleMode,
+} from '../types'
 
 
 interface ControlPanelProps {
@@ -11,6 +17,8 @@ interface ControlPanelProps {
   translationRevisionCount: number
   asrRevisionCount: number
   lastRevisionReason: RevisionReason | null
+  serverDiagnostics: SessionDiagnostics | null
+  clientDiagnostics: ClientDiagnostics
   onStart: () => void
   onStop: () => void
   onManualRevise: () => void
@@ -101,6 +109,8 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   translationRevisionCount,
   asrRevisionCount,
   lastRevisionReason,
+  serverDiagnostics,
+  clientDiagnostics,
   onStart,
   onStop,
   onManualRevise,
@@ -272,11 +282,71 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             color: '#b9c5d3',
           }}
         >
-          <div>Shortcut: Ctrl+R triggers a manual revision check.</div>
-          <div>Silence after audio input also triggers one revision pass.</div>
-          <div>Use Both mode to compare source text and translation fixes.</div>
+          <DetailRow label="Session" value={serverDiagnostics?.session_id ?? clientDiagnostics.sessionId} />
+          <DetailRow label="Sent chunks" value={clientDiagnostics.sentAudioChunks.toString()} />
+          <DetailRow label="Client drops" value={clientDiagnostics.droppedAudioChunks.toString()} />
+          <DetailRow label="Server drops" value={(serverDiagnostics?.audio_chunks_dropped ?? 0).toString()} />
+          <DetailRow label="Reconnects" value={clientDiagnostics.reconnectAttempts.toString()} />
+          <DetailRow
+            label="ASR latency"
+            value={formatLatency(serverDiagnostics?.latency.capture_to_asr_ms)}
+          />
+          <DetailRow
+            label="First token"
+            value={formatLatency(serverDiagnostics?.latency.asr_to_first_token_ms)}
+          />
+          <DetailRow
+            label="Final text"
+            value={formatLatency(serverDiagnostics?.latency.asr_to_translation_final_ms)}
+          />
+          <DetailRow
+            label="API calls"
+            value={formatCounterMap(serverDiagnostics?.api_call_counts)}
+          />
         </div>
       ) : null}
     </aside>
   )
+}
+
+
+interface DetailRowProps {
+  label: string
+  value: string
+}
+
+
+const DetailRow: React.FC<DetailRowProps> = ({ label, value }) => (
+  <div
+    style={{
+      display: 'grid',
+      gridTemplateColumns: 'minmax(86px, 0.8fr) minmax(0, 1.2fr)',
+      gap: '8px',
+      minWidth: 0,
+    }}
+  >
+    <span style={{ color: '#7f8ea3' }}>{label}</span>
+    <span style={{ color: '#d9e1eb', wordBreak: 'break-word' }}>{value || '-'}</span>
+  </div>
+)
+
+
+function formatLatency(summary: { count: number; avg_ms: number; max_ms: number } | undefined): string {
+  if (!summary || summary.count === 0) {
+    return '-'
+  }
+  return `${summary.avg_ms}ms avg`
+}
+
+
+function formatCounterMap(values: Record<string, number> | undefined): string {
+  if (!values) {
+    return '-'
+  }
+
+  const entries = Object.entries(values)
+    .filter(([, value]) => value > 0)
+    .map(([key, value]) => `${key}:${value}`)
+
+  return entries.length > 0 ? entries.join(', ') : '-'
 }

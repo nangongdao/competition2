@@ -72,12 +72,12 @@ class ASRService:
             logger.error("Failed to load Whisper model: {}", exc)
             raise ASRError(f"Whisper initialization failed: {exc}")
 
-    async def process_chunk(self, audio_bytes: bytes) -> None:
+    async def process_chunk(self, audio_bytes: bytes) -> int:
         if self._engine != "whisper":
-            return
-        await self._process_whisper(audio_bytes)
+            return 0
+        return await self._process_whisper(audio_bytes)
 
-    async def _process_whisper(self, audio_bytes: bytes) -> None:
+    async def _process_whisper(self, audio_bytes: bytes) -> int:
         audio_array = np.frombuffer(audio_bytes, dtype=np.float32)
         self._latest_input_audio_chunk = audio_bytes
         self._audio_buffer.append(audio_array)
@@ -85,11 +85,12 @@ class ASRService:
         total_samples = sum(len(chunk) for chunk in self._audio_buffer)
         min_samples = self._sample_rate * 2
         if total_samples >= min_samples:
-            await self._trigger_whisper_decode()
+            return await self._trigger_whisper_decode()
+        return 0
 
-    async def _trigger_whisper_decode(self) -> None:
+    async def _trigger_whisper_decode(self) -> int:
         if not self._model or not self._audio_buffer:
-            return
+            return 0
 
         audio_buffer_snapshot = self._audio_buffer
         self._audio_buffer = []
@@ -99,12 +100,16 @@ class ASRService:
         try:
             results = await self._transcribe_float32(audio)
 
+            emitted = 0
             for result in results:
                 if result.text and self._on_final:
                     await self._on_final(result.text, result.confidence)
+                    emitted += 1
+            return emitted
         except Exception as exc:
             logger.error("Whisper decode error: {}", exc)
             self._audio_buffer = audio_buffer_snapshot + self._audio_buffer
+            return 0
 
     async def redecode_audio(self, audio_bytes: bytes) -> ASRDecodeResult | None:
         """Re-run Whisper on cached segment audio for ASR correction."""
@@ -153,6 +158,19 @@ class ASRService:
 
     def get_last_audio_chunk(self) -> bytes:
         return self._last_segment_audio_chunk or self._latest_input_audio_chunk
+
+    def create_session(self) -> ASRService:
+        """Create isolated stream state that shares the initialized model."""
+        service = ASRService()
+        service._model = self._model
+        return service
+
+    def reset_session_state(self) -> None:
+        self._on_partial = None
+        self._on_final = None
+        self._audio_buffer.clear()
+        self._latest_input_audio_chunk = b""
+        self._last_segment_audio_chunk = b""
 
     async def shutdown(self) -> None:
         if self._model:

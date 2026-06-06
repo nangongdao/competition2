@@ -16,19 +16,16 @@ from services.revision_service import RevisionService
 class WebSocketHandler:
     """Owns per-session pipelines and routes websocket messages."""
 
-    _active_pipelines: dict[str, Pipeline] = {}
-
     def __init__(self) -> None:
         self._asr: Optional[ASRService] = None
         self._nmt: Optional[NMTService] = None
         self._ctx_manager: Optional[ContextManager] = None
-        self._revision: Optional[RevisionService] = None
+        self._active_pipelines: dict[str, Pipeline] = {}
 
     async def initialize(self) -> None:
         self._asr = ASRService()
         self._nmt = NMTService()
         self._ctx_manager = ContextManager()
-        self._revision = RevisionService()
 
         await self._asr.initialize()
         await self._nmt.initialize()
@@ -40,12 +37,26 @@ class WebSocketHandler:
         await ws.accept()
         logger.info("WebSocket connected: {}", session_id)
 
+        if not self._asr or not self._nmt or not self._ctx_manager:
+            await ws.send_json({
+                "type": "error",
+                "code": "SERVICE_NOT_READY",
+                "message": "Translation service is not initialized",
+            })
+            await ws.close()
+            return
+
+        existing = self._active_pipelines.get(session_id)
+        if existing:
+            logger.info("Replacing active pipeline for reconnecting session {}", session_id)
+            await existing.stop()
+
         pipeline = Pipeline(
             session_id=session_id,
-            asr=self._asr,
+            asr=self._asr.create_session(),
             nmt=self._nmt,
             ctx_manager=self._ctx_manager,
-            revision=self._revision,
+            revision=RevisionService(),
         )
         pipeline.set_on_message(lambda msg: self._send_message(ws, msg))
         await pipeline.start()
@@ -68,7 +79,8 @@ class WebSocketHandler:
             logger.error("WebSocket error for {}: {}", session_id, exc)
         finally:
             await pipeline.stop()
-            self._active_pipelines.pop(session_id, None)
+            if self._active_pipelines.get(session_id) is pipeline:
+                self._active_pipelines.pop(session_id, None)
 
     async def _handle_control_message(self, pipeline: Pipeline, text: str) -> None:
         try:

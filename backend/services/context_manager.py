@@ -1,4 +1,6 @@
-"""上下文管理器 — 基于 Redis 的上下文窗口存储"""
+"""Redis-backed context window and per-session audio cache."""
+
+from __future__ import annotations
 
 import json
 import time
@@ -9,24 +11,17 @@ from loguru import logger
 
 from core.config import settings
 from core.exceptions import ContextError
-from models.segment import Segment, ContextWindow
+from models.segment import ContextWindow, Segment
 
 
 class ContextManager:
-    """上下文管理器
+    """Stores session context windows, metadata, and cached segment audio."""
 
-    使用 Redis 存储会话的上下文窗口，支持：
-    - 会话生命周期管理
-    - 段落级 CRUD
-    - 滑动窗口获取
-    - TTL 自动过期
-    """
-
-    def __init__(self):
+    def __init__(self) -> None:
         self._redis: Optional[aioredis.Redis] = None
 
     async def initialize(self) -> None:
-        """初始化 Redis 连接"""
+        """Initialize the Redis connection."""
         try:
             self._redis = aioredis.from_url(
                 settings.redis_url,
@@ -34,38 +29,53 @@ class ContextManager:
                 decode_responses=True,
             )
             await self._redis.ping()
-            logger.info(f"Redis connected: {settings.redis_url}")
-        except Exception as e:
-            logger.error(f"Redis connection failed: {e}")
-            raise ContextError(f"Redis init failed: {e}")
+            logger.info("Redis connected: {}", settings.redis_url)
+        except Exception as exc:
+            logger.error("Redis connection failed: {}", exc)
+            raise ContextError(f"Redis init failed: {exc}") from exc
 
-    async def init_session(self, session_id: str) -> None:
-        """初始化新会话"""
+    async def init_session(self, session_id: str) -> int:
+        """Initialize metadata and return the reconnect count for the session."""
         if not self._redis:
             raise ContextError("Redis not initialized")
 
-        # 保存会话元数据
-        await self._redis.hset(
-            f"session:{session_id}:meta",
-            mapping={
-                "created_at": str(time.time()),
-                "segment_count": "0",
-            },
-        )
-        await self._redis.expire(
-            f"session:{session_id}:meta",
-            settings.segment_ttl_seconds,
-        )
-        logger.debug(f"Session initialized: {session_id}")
+        meta_key = f"session:{session_id}:meta"
+        exists = bool(await self._redis.exists(meta_key))
+
+        if not exists:
+            await self._redis.hset(
+                meta_key,
+                mapping={
+                    "created_at": str(time.time()),
+                    "segment_count": "0",
+                    "reconnect_count": "0",
+                },
+            )
+            reconnect_count = 0
+        else:
+            reconnect_count = await self._redis.hincrby(meta_key, "reconnect_count", 1)
+
+        await self._redis.hset(meta_key, "last_connected_at", str(time.time()))
+        await self._redis.expire(meta_key, settings.segment_ttl_seconds)
+        logger.debug("Session initialized: {}", session_id)
+        return int(reconnect_count)
+
+    async def next_segment_index(self, session_id: str) -> int:
+        """Reserve a stable segment index for reconnect-safe segment IDs."""
+        if not self._redis:
+            raise ContextError("Redis not initialized")
+
+        meta_key = f"session:{session_id}:meta"
+        next_value = await self._redis.hincrby(meta_key, "segment_count", 1)
+        await self._redis.expire(meta_key, settings.segment_ttl_seconds)
+        return int(next_value) - 1
 
     async def add_segment(self, session_id: str, segment: Segment) -> None:
-        """添加新段落到会话上下文窗口"""
+        """Append a segment to the session context window."""
         if not self._redis:
             raise ContextError("Redis not initialized")
 
         key = f"session:{session_id}:segments"
-
-        # 序列化段落
         segment_data = {
             "id": segment.id,
             "text_asr": segment.text_asr,
@@ -77,18 +87,13 @@ class ContextManager:
             "revision_count": len(segment.revision_history),
         }
 
-        # 追加到列表尾部
         await self._redis.rpush(key, json.dumps(segment_data))
-
-        # 裁剪窗口大小（保留最近 N*2 条，留余量）
         max_len = settings.context_window_size * 2
         await self._redis.ltrim(key, -max_len, -1)
-
-        # 设置 TTL
         await self._redis.expire(key, settings.segment_ttl_seconds)
 
     async def get_window(self, session_id: str) -> ContextWindow:
-        """获取会话的上下文窗口"""
+        """Return the current sliding context window for a session."""
         if not self._redis:
             raise ContextError("Redis not initialized")
 
@@ -116,41 +121,44 @@ class ContextManager:
         return window
 
     async def update_segment(self, session_id: str, segment: Segment) -> None:
-        """更新段落（翻译完成后）"""
+        """Update segment state after translation finalization."""
         if not self._redis:
             raise ContextError("Redis not initialized")
 
         key = f"session:{session_id}:segments"
         raw_list = await self._redis.lrange(key, 0, -1)
 
-        for i, raw in enumerate(raw_list):
+        for index, raw in enumerate(raw_list):
             data = json.loads(raw)
             if data["id"] == segment.id:
                 data["text_translated"] = segment.text_translated
                 data["status"] = segment.status
                 data["revised_at"] = segment.revised_at or ""
                 data["revision_count"] = len(segment.revision_history)
-                await self._redis.lset(key, i, json.dumps(data))
+                await self._redis.lset(key, index, json.dumps(data))
                 return
 
-        logger.warning(f"Segment not found for update: {segment.id}")
+        logger.warning("Segment not found for update: {}", segment.id)
 
     async def update_translation(
-        self, session_id: str, segment_id: str, new_text: str
+        self,
+        session_id: str,
+        segment_id: str,
+        new_text: str,
     ) -> None:
-        """更新段落的翻译文本（修正引擎使用）"""
+        """Update translated text for an existing segment."""
         if not self._redis:
             raise ContextError("Redis not initialized")
 
         key = f"session:{session_id}:segments"
         raw_list = await self._redis.lrange(key, 0, -1)
 
-        for i, raw in enumerate(raw_list):
+        for index, raw in enumerate(raw_list):
             data = json.loads(raw)
             if data["id"] == segment_id:
                 data["text_translated"] = new_text
                 data["status"] = "revised"
-                await self._redis.lset(key, i, json.dumps(data))
+                await self._redis.lset(key, index, json.dumps(data))
                 return
 
     async def update_source_text(
@@ -159,19 +167,19 @@ class ContextManager:
         segment_id: str,
         new_text: str,
     ) -> None:
-        """Update the ASR source text for an existing segment."""
+        """Update ASR source text for an existing segment."""
         if not self._redis:
             raise ContextError("Redis not initialized")
 
         key = f"session:{session_id}:segments"
         raw_list = await self._redis.lrange(key, 0, -1)
 
-        for i, raw in enumerate(raw_list):
+        for index, raw in enumerate(raw_list):
             data = json.loads(raw)
             if data["id"] == segment_id:
                 data["text_asr"] = new_text
                 data["status"] = "revised"
-                await self._redis.lset(key, i, json.dumps(data))
+                await self._redis.lset(key, index, json.dumps(data))
                 return
 
     async def save_audio_chunk(
@@ -180,7 +188,7 @@ class ContextManager:
         segment_id: str,
         audio_data: bytes,
     ) -> None:
-        """Persist recent raw audio for future ASR correction."""
+        """Persist raw segment audio for future ASR correction."""
         if not self._redis:
             raise ContextError("Redis not initialized")
 
@@ -199,11 +207,11 @@ class ContextManager:
         return bytes.fromhex(raw)
 
     async def close_session(self, session_id: str) -> None:
-        """关闭会话（保留数据到 TTL 过期）"""
-        logger.debug(f"Session closed: {session_id}")
+        """Close the active connection while keeping session data until TTL expiry."""
+        logger.debug("Session closed: {}", session_id)
 
     async def shutdown(self) -> None:
-        """关闭 Redis 连接"""
+        """Close Redis connection."""
         if self._redis:
             await self._redis.close()
             logger.info("Redis connection closed")

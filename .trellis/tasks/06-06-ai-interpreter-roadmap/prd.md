@@ -40,6 +40,11 @@ Identify the next improvement directions for this project so it can satisfy the 
 * Prefer cached audio re-decode for ASR correction when audio is available; fall back to LLM ASR post-edit only when re-decode is unavailable or does not produce a useful correction.
 * Emit correction metadata that allows the frontend and logs to distinguish ASR correction from translation correction and explain what changed.
 * Keep the implementation compatible with the current FastAPI + Redis + Faster-Whisper + LLM translation architecture.
+* Implement P1/P2: make latency/stability/cost observable and harden session isolation/reconnect behavior.
+* Emit live session diagnostics over WebSocket, including audio chunk counts, dropped chunks, reconnects, ASR/translation/revision latencies, API call counters, and revision counters.
+* Preserve a frontend-generated session ID across automatic reconnects, but reset it for a user-initiated new session.
+* Keep mutable ASR buffers/callbacks and revision caches isolated per live pipeline while sharing heavy stateless model/client resources.
+* Cancel pipeline worker tasks and silence timers on disconnect/stop so in-flight work does not continue for a closed connection.
 
 ## Acceptance Criteria (evolving)
 
@@ -52,6 +57,12 @@ Identify the next improvement directions for this project so it can satisfy the 
 * [x] ASR correction uses cached segment audio re-decode before LLM post-edit fallback.
 * [x] Revision payloads include enough metadata to inspect the correction source and old/new text.
 * [x] Backend tests cover ASR re-decode correction, fallback behavior, and no-op cases.
+* [x] Backend emits `session_diagnostics` snapshots with latency, audio, reconnect, revision, and API counters.
+* [x] Frontend displays live diagnostics in the control details and exports diagnostics as TXT.
+* [x] Frontend reuses one session ID during automatic reconnects and creates a new one after user stop.
+* [x] WebSocket pipelines use per-session ASR stream state and per-session revision service state.
+* [x] WebSocket disconnect/stop cancels queued audio processing and clears ASR session callbacks/buffers.
+* [x] Segment IDs are reserved through Redis metadata so reconnects do not restart at `_0`.
 
 ## Definition of Done (team quality bar)
 
@@ -67,7 +78,7 @@ Identify the next improvement directions for this project so it can satisfy the 
 * Building bidirectional meeting interpretation unless explicitly added later.
 * Prioritizing desktop/Tauri system-audio capture before the browser MVP has stable metrics.
 * Adding TTS before subtitle correction and latency behavior are measurable.
-* Implementing P1/P2/P3/P4/P5 in this slice.
+* Implementing P3/P4/P5 in this slice.
 * Building a new provider abstraction unless needed to make P0 testable.
 
 ## Research References
@@ -151,6 +162,14 @@ Chosen implementation slice:
 **Decision**: Implement P0 first, scoped to segment-level audio correction and revision metadata.
 
 **Consequences**: The implementation should stay backend-heavy and test-focused. Frontend changes should be limited to preserving/displaying revision metadata already sent over the existing `revision` WebSocket message shape.
+
+## P1/P2 Implementation Decision
+
+**Context**: The user asked to continue with P1/P2 after P0 was committed.
+
+**Decision**: Implement P1/P2 as one coherent reliability slice: live diagnostics, bounded audio queueing, reconnect-safe session IDs, Redis-backed segment indexing, per-session ASR stream state, per-session revision cache, and local translation accumulation instead of shared `NMTService.last_translation`.
+
+**Consequences**: The browser MVP now exposes measurable latency/stability/cost counters and has stronger multi-session safety. True 30-60 minute live endurance testing still requires Redis, Whisper model, and provider API keys.
 
 ## Technical Notes
 

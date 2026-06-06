@@ -7,6 +7,7 @@ interface SubtitleHistoryPanelProps {
   entries: SubtitleEntry[]
   isOpen: boolean
   transcriptText: string
+  diagnosticsText: string
   onClose: () => void
 }
 
@@ -83,6 +84,7 @@ export const SubtitleHistoryPanel: React.FC<SubtitleHistoryPanelProps> = ({
   entries,
   isOpen,
   transcriptText,
+  diagnosticsText,
   onClose,
 }) => {
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'failed'>('idle')
@@ -132,6 +134,7 @@ export const SubtitleHistoryPanel: React.FC<SubtitleHistoryPanelProps> = ({
 
   const recentEntries = entries.slice(-30).reverse()
   const canExport = transcriptText.trim().length > 0
+  const canExportDiagnostics = diagnosticsText.trim().length > 0
 
   const handleCopy = async (): Promise<void> => {
     if (!canExport) {
@@ -158,6 +161,23 @@ export const SubtitleHistoryPanel: React.FC<SubtitleHistoryPanelProps> = ({
     const link = document.createElement('a')
     link.href = url
     link.download = `ai-interpreter-transcript-${Date.now()}.txt`
+    link.style.display = 'none'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
+
+  const handleDownloadDiagnostics = (): void => {
+    if (!canExportDiagnostics) {
+      return
+    }
+
+    const blob = new Blob([diagnosticsText], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `ai-interpreter-diagnostics-${Date.now()}.txt`
     link.style.display = 'none'
     document.body.appendChild(link)
     link.click()
@@ -303,6 +323,24 @@ export const SubtitleHistoryPanel: React.FC<SubtitleHistoryPanelProps> = ({
             onClick={handleDownload}
           >
             Download TXT
+          </button>
+        </div>
+        <div style={{ gridColumn: '1 / -1', borderRadius: '12px', overflow: 'hidden' }}>
+          <button
+            type="button"
+            disabled={!canExportDiagnostics}
+            style={{
+              ...tapSafeButtonStyle,
+              width: '100%',
+              minHeight: '44px',
+              background: canExportDiagnostics ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.04)',
+              color: canExportDiagnostics ? '#d9e1eb' : '#718093',
+              border: '1px solid rgba(255,255,255,0.1)',
+              cursor: canExportDiagnostics ? 'pointer' : 'not-allowed',
+            }}
+            onClick={handleDownloadDiagnostics}
+          >
+            Download diagnostics
           </button>
         </div>
       </div>

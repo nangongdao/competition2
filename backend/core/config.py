@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     audio_sample_rate: int = 16000
     audio_chunk_duration_ms: int = 100
     audio_ttl_seconds: int = 120
+    audio_queue_max_chunks: int = 100
 
     class Config:
         env_file = ".env"

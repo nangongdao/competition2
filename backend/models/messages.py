@@ -12,9 +12,11 @@ class ServerMessage:
         "asr_final",
         "translation_token",
         "revision",
+        "session_diagnostics",
         "status",
         "error",
     ]
+    session_id: Optional[str] = None
     segment_id: Optional[str] = None
     text: Optional[str] = None
     confidence: Optional[float] = None
@@ -28,6 +30,7 @@ class ServerMessage:
     correction_source: Optional[str] = None
     trigger: Optional[str] = None
     latency_ms: Optional[int] = None
+    diagnostics: Optional[dict[str, Any]] = None
     code: Optional[str] = None
     message: Optional[str] = None
     timestamp: float = field(default_factory=time.time)

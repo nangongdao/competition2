@@ -69,6 +69,8 @@ const App: React.FC = () => {
         translationRevisionCount={appState.translationRevisionCount}
         asrRevisionCount={appState.asrRevisionCount}
         lastRevisionReason={appState.lastRevisionReason}
+        serverDiagnostics={appState.serverDiagnostics}
+        clientDiagnostics={appState.clientDiagnostics}
         onStart={handleStart}
         onStop={() => controller.stop()}
         onManualRevise={() => controller.requestManualRevision()}
@@ -80,6 +82,7 @@ const App: React.FC = () => {
         entries={appState.subtitleHistory}
         isOpen={isHistoryOpen}
         transcriptText={appState.transcriptText}
+        diagnosticsText={appState.diagnosticsText}
         onClose={() => setIsHistoryOpen(false)}
       />
 

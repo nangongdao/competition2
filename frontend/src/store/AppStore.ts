@@ -4,8 +4,10 @@ import { SubtitleRenderer } from '../subtitle/SubtitleRenderer'
 import { SubtitleStore } from '../subtitle/SubtitleStore'
 import type {
   AppStatus,
+  ClientDiagnostics,
   RevisionReason,
   ServerMessage,
+  SessionDiagnostics,
   SubtitleEntry,
   SubtitleMode,
 } from '../types'
@@ -18,6 +20,9 @@ export interface AppState {
   translationRevisionCount: number
   asrRevisionCount: number
   lastRevisionReason: RevisionReason | null
+  serverDiagnostics: SessionDiagnostics | null
+  clientDiagnostics: ClientDiagnostics
+  diagnosticsText: string
   subtitleHistory: SubtitleEntry[]
   transcriptText: string
 }
@@ -27,6 +32,16 @@ type StateListener = (state: AppState) => void
 
 
 const WS_URL = `ws://${window.location.hostname}:8000/api/v1/ws/translate`
+
+
+const EMPTY_CLIENT_DIAGNOSTICS: ClientDiagnostics = {
+  sessionId: '',
+  sentAudioChunks: 0,
+  droppedAudioChunks: 0,
+  reconnectAttempts: 0,
+  connectionOpens: 0,
+  lastDisconnectAt: null,
+}
 
 
 export class AppController {
@@ -42,6 +57,9 @@ export class AppController {
     translationRevisionCount: 0,
     asrRevisionCount: 0,
     lastRevisionReason: null,
+    serverDiagnostics: null,
+    clientDiagnostics: EMPTY_CLIENT_DIAGNOSTICS,
+    diagnosticsText: formatDiagnosticsText(EMPTY_CLIENT_DIAGNOSTICS, null),
     subtitleHistory: [],
     transcriptText: '',
   }
@@ -50,6 +68,11 @@ export class AppController {
     this._audioCapture = new AudioCapture()
     this._wsClient = new WsClient(WS_URL)
     this._subtitleStore = new SubtitleStore()
+    this._state = {
+      ...this._state,
+      clientDiagnostics: this._wsClient.diagnostics,
+      diagnosticsText: formatDiagnosticsText(this._wsClient.diagnostics, null),
+    }
 
     this._audioCapture.setCallbacks({
       onStateChange: (state) => {
@@ -71,6 +94,12 @@ export class AppController {
       },
       onError: (error) => {
         console.error('[AppController] websocket error', error)
+      },
+      onDiagnosticsChange: (diagnostics) => {
+        this._updateState({
+          clientDiagnostics: diagnostics,
+          diagnosticsText: formatDiagnosticsText(diagnostics, this._state.serverDiagnostics),
+        })
       },
     })
   }
@@ -109,7 +138,7 @@ export class AppController {
 
   stop(): void {
     this._audioCapture.stop()
-    this._wsClient.disconnect()
+    this._wsClient.resetSession()
     this._subtitleStore.reset()
     this._subtitleRenderer?.reset()
     this._updateState({
@@ -117,6 +146,9 @@ export class AppController {
       translationRevisionCount: 0,
       asrRevisionCount: 0,
       lastRevisionReason: null,
+      serverDiagnostics: null,
+      clientDiagnostics: this._wsClient.diagnostics,
+      diagnosticsText: formatDiagnosticsText(this._wsClient.diagnostics, null),
       subtitleHistory: [],
       transcriptText: '',
     })
@@ -177,6 +209,16 @@ export class AppController {
         this._syncSubtitles()
         break
 
+      case 'session_diagnostics':
+        this._updateState({
+          serverDiagnostics: message.diagnostics,
+          diagnosticsText: formatDiagnosticsText(
+            this._state.clientDiagnostics,
+            message.diagnostics,
+          ),
+        })
+        break
+
       case 'status':
         console.warn('[AppController] status', message.code, message.message)
         break
@@ -208,4 +250,80 @@ export class AppController {
     this._state = { ...this._state, ...partial }
     this._listeners.forEach((listener) => listener(this._state))
   }
+}
+
+
+function formatDiagnosticsText(
+  client: ClientDiagnostics,
+  server: SessionDiagnostics | null,
+): string {
+  const lines = [
+    'AI Interpreter Session Diagnostics',
+    '',
+    `Session: ${server?.session_id || client.sessionId || '-'}`,
+    `Status: ${server?.status ?? '-'}`,
+    `Duration: ${server ? formatDuration(server.duration_ms) : '-'}`,
+    '',
+    'Client',
+    `Sent audio chunks: ${client.sentAudioChunks}`,
+    `Dropped audio chunks: ${client.droppedAudioChunks}`,
+    `Reconnect attempts: ${client.reconnectAttempts}`,
+    `Connection opens: ${client.connectionOpens}`,
+    `Last disconnect: ${client.lastDisconnectAt ? new Date(client.lastDisconnectAt).toLocaleString() : '-'}`,
+  ]
+
+  if (!server) {
+    return lines.join('\n')
+  }
+
+  lines.push(
+    '',
+    'Backend',
+    `Received audio chunks: ${server.audio_chunks_received}`,
+    `Dropped audio chunks: ${server.audio_chunks_dropped}`,
+    `Received audio bytes: ${server.audio_bytes_received}`,
+    `ASR segments: ${server.asr_segments}`,
+    `Translation segments: ${server.translation_segments}`,
+    `Revision segments: ${server.revision_segments}`,
+    `Reconnect count: ${server.reconnect_count}`,
+    '',
+    'Latency',
+    `Capture to ASR: ${formatLatency(server.latency.capture_to_asr_ms)}`,
+    `ASR to first token: ${formatLatency(server.latency.asr_to_first_token_ms)}`,
+    `ASR to translation final: ${formatLatency(server.latency.asr_to_translation_final_ms)}`,
+    `Revision final: ${formatLatency(server.latency.revision_final_ms)}`,
+    '',
+    'Counters',
+    `API calls: ${formatCounterMap(server.api_call_counts)}`,
+    `Revision reasons: ${formatCounterMap(server.revision_counts)}`,
+    `Revision sources: ${formatCounterMap(server.revision_sources)}`,
+    `Revision triggers: ${formatCounterMap(server.revision_triggers)}`,
+  )
+
+  return lines.join('\n')
+}
+
+
+function formatDuration(durationMs: number): string {
+  if (durationMs < 1000) {
+    return `${durationMs}ms`
+  }
+  return `${(durationMs / 1000).toFixed(1)}s`
+}
+
+
+function formatLatency(summary: { count: number; avg_ms: number; max_ms: number } | undefined): string {
+  if (!summary || summary.count === 0) {
+    return '-'
+  }
+  return `${summary.avg_ms}ms avg / ${summary.max_ms}ms max (${summary.count})`
+}
+
+
+function formatCounterMap(values: Record<string, number>): string {
+  const entries = Object.entries(values)
+    .filter(([, value]) => value > 0)
+    .map(([key, value]) => `${key}:${value}`)
+
+  return entries.length > 0 ? entries.join(', ') : '-'
 }

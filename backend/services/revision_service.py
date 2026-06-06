@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 import time
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 
@@ -53,6 +53,7 @@ Return only one line.
         self._revision_count = 0
         self._translation_cache: OrderedDict[str, str] = OrderedDict()
         self._context_fingerprint_by_segment: dict[str, str] = {}
+        self._api_call_counts: Counter[str] = Counter()
 
     async def check_and_revise(
         self,
@@ -78,6 +79,7 @@ Return only one line.
             cached_translation = self._translation_cache.get(context_fingerprint)
 
             if cached_translation is not None:
+                self._api_call_counts["translation_cache_hit"] += 1
                 if self._should_revise(segment.text_translated, cached_translation):
                     revisions.append(self._build_translation_revision(
                         segment,
@@ -131,6 +133,7 @@ Return only one line.
         corrected_confidence: float | None = None
 
         if audio_chunk:
+            self._api_call_counts["asr_redecode"] += 1
             redecode_result = await asr.redecode_audio(audio_chunk)
             if redecode_result and self._should_revise_source(segment.text_asr, redecode_result.text):
                 corrected = redecode_result.text
@@ -183,6 +186,11 @@ Return only one line.
     def total_revisions(self) -> int:
         return self._revision_count
 
+    def consume_api_call_counts(self) -> dict[str, int]:
+        counts = dict(self._api_call_counts)
+        self._api_call_counts.clear()
+        return counts
+
     def has_semantic_ambiguity(self, segment: Segment | None) -> bool:
         return self._has_semantic_ambiguity(segment)
 
@@ -222,6 +230,7 @@ Return only one line.
     ) -> str:
         new_translation = ""
         try:
+            self._api_call_counts["nmt_stream"] += 1
             async for token in nmt.translate_stream(context, segment):
                 if token != "<FINAL>":
                     new_translation += token
@@ -255,6 +264,7 @@ Corrected:"""
     ) -> str:
         prompt = self._build_asr_prompt(segment, context)
         try:
+            self._api_call_counts["nmt_complete"] += 1
             corrected = (await nmt.complete_text(
                 prompt,
                 system_prompt=self.ASR_CORRECTION_PROMPT,

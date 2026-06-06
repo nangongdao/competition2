@@ -5,6 +5,7 @@ export type ServerMessage =
   | AsrFinalMessage
   | TranslationTokenMessage
   | RevisionMessage
+  | SessionDiagnosticsMessage
   | StatusMessage
   | ErrorMessage
 
@@ -18,6 +19,7 @@ export interface AsrFinalMessage {
   segment_id: string
   text: string
   confidence: number
+  latency_ms?: number
 }
 
 export interface TranslationTokenMessage {
@@ -43,10 +45,41 @@ export interface RevisionMessage {
   confidence?: number
 }
 
+export interface LatencySummary {
+  count: number
+  avg_ms: number
+  max_ms: number
+}
+
+export interface SessionDiagnostics {
+  session_id: string
+  status: 'running' | 'closed'
+  started_at: number
+  duration_ms: number
+  audio_chunks_received: number
+  audio_bytes_received: number
+  audio_chunks_dropped: number
+  asr_segments: number
+  translation_segments: number
+  revision_segments: number
+  reconnect_count: number
+  latency: Record<string, LatencySummary>
+  api_call_counts: Record<string, number>
+  revision_counts: Record<string, number>
+  revision_sources: Record<string, number>
+  revision_triggers: Record<string, number>
+}
+
+export interface SessionDiagnosticsMessage {
+  type: 'session_diagnostics'
+  diagnostics: SessionDiagnostics
+}
+
 export interface StatusMessage {
   type: 'status'
   code: string
   message: string
+  session_id?: string
 }
 
 export interface ErrorMessage {
@@ -83,3 +116,12 @@ export interface SubtitleEntry {
 }
 
 export type AppStatus = 'idle' | 'capturing' | 'translating' | 'error'
+
+export interface ClientDiagnostics {
+  sessionId: string
+  sentAudioChunks: number
+  droppedAudioChunks: number
+  reconnectAttempts: number
+  connectionOpens: number
+  lastDisconnectAt: number | null
+}

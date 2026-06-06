@@ -104,7 +104,6 @@ export class AudioCapture {
       this._state = 'active'
       this._callbacks?.onStateChange(this._state)
 
-      console.log('[AudioCapture] Started successfully')
     } catch (err) {
       this._state = 'error'
       this._callbacks?.onStateChange(this._state)
@@ -149,7 +148,6 @@ export class AudioCapture {
     this._state = 'inactive'
     this._callbacks?.onStateChange(this._state)
 
-    console.log('[AudioCapture] Stopped')
   }
 
   /** 将缓冲区中的数据打包发送 */

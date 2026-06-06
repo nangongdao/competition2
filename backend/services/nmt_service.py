@@ -27,7 +27,6 @@ Rules:
     def __init__(self) -> None:
         self._engine = settings.nmt_engine
         self._client = None
-        self.last_translation = ""
 
     async def initialize(self) -> None:
         if self._engine == "claude":
@@ -100,7 +99,6 @@ Translate this sentence from English to Chinese:
 
 Translation:"""
 
-            self.last_translation = ""
             async with self._client.messages.stream(
                 model=settings.nmt_model,
                 max_tokens=1024,
@@ -108,7 +106,6 @@ Translation:"""
                 messages=[{"role": "user", "content": user_message}],
             ) as stream:
                 async for text in stream.text_stream:
-                    self.last_translation += text
                     yield text
 
             yield "<FINAL>"
@@ -139,7 +136,6 @@ Translation:""",
                 },
             ]
 
-            self.last_translation = ""
             stream = await self._client.chat.completions.create(
                 model=settings.nmt_model,
                 messages=messages,
@@ -150,7 +146,6 @@ Translation:""",
             async for chunk in stream:
                 token = chunk.choices[0].delta.content
                 if token:
-                    self.last_translation += token
                     yield token
 
             yield "<FINAL>"
