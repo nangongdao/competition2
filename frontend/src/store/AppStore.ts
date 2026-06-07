@@ -31,6 +31,7 @@ export interface AppState {
   ttsSettings: TtsSettings
   ttsDiagnostics: TtsDiagnostics
   diagnosticsText: string
+  visibleSubtitles: SubtitleEntry[]
   subtitleHistory: SubtitleEntry[]
 }
 
@@ -101,6 +102,7 @@ export class AppController {
     ttsSettings: EMPTY_TTS_SETTINGS,
     ttsDiagnostics: EMPTY_TTS_DIAGNOSTICS,
     diagnosticsText: formatDiagnosticsText(EMPTY_CLIENT_DIAGNOSTICS, null, EMPTY_TTS_DIAGNOSTICS),
+    visibleSubtitles: [],
     subtitleHistory: [],
   }
 
@@ -216,6 +218,7 @@ export class AppController {
         null,
         this._ttsPlayer.diagnostics,
       ),
+      visibleSubtitles: [],
       subtitleHistory: [],
     })
   }
@@ -361,6 +364,7 @@ export class AppController {
 
   private _updateSubtitleSnapshot(): void {
     this._updateState({
+      visibleSubtitles: [...this._subtitleStore.subtitles],
       subtitleHistory: [...this._subtitleStore.history],
     })
   }

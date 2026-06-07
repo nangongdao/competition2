@@ -1,5 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react'
 
+import {
+  createDesktopOverlaySnapshot,
+  getDesktopBridge,
+  type DesktopOverlayState,
+} from './desktop/overlay'
 import { SubtitleRenderer } from './subtitle/SubtitleRenderer'
 import { AppController, type AppState } from './store/AppStore'
 import { ControlPanel } from './ui/ControlPanel'
@@ -12,12 +17,44 @@ const controller = new AppController()
 const App: React.FC = () => {
   const [appState, setAppState] = useState<AppState>(controller.state)
   const [isHistoryOpen, setIsHistoryOpen] = useState(false)
+  const [desktopOverlayState, setDesktopOverlayState] = useState<DesktopOverlayState>({
+    available: false,
+    visible: false,
+  })
   const containerRef = useRef<HTMLDivElement | null>(null)
   const rendererRef = useRef<SubtitleRenderer | null>(null)
 
   useEffect(() => {
     const unsubscribe = controller.subscribe(setAppState)
     return unsubscribe
+  }, [])
+
+  useEffect(() => {
+    const bridge = getDesktopBridge()
+    if (!bridge) {
+      return undefined
+    }
+
+    let isMounted = true
+    const unsubscribe = bridge.onOverlayStateChange((state) => {
+      setDesktopOverlayState(state)
+    })
+
+    bridge
+      .getOverlayState()
+      .then((state) => {
+        if (isMounted) {
+          setDesktopOverlayState(state)
+        }
+      })
+      .catch((error: unknown) => {
+        console.warn('[App] failed to read desktop overlay state', error)
+      })
+
+    return () => {
+      isMounted = false
+      unsubscribe()
+    }
   }, [])
 
   useEffect(() => {
@@ -42,11 +79,31 @@ const App: React.FC = () => {
     }
   }, [appState.subtitleMode])
 
+  useEffect(() => {
+    const bridge = getDesktopBridge()
+    if (!bridge) {
+      return
+    }
+
+    bridge.sendSubtitleSnapshot(
+      createDesktopOverlaySnapshot(appState.visibleSubtitles, appState.subtitleMode),
+    )
+  }, [appState.visibleSubtitles, appState.subtitleMode])
+
   const handleStart = (): void => {
     controller.start().catch((error: unknown) => {
       console.error('Start failed', error)
       window.alert('Start failed. Check microphone, tab audio, or system audio permissions.')
     })
+  }
+
+  const handleDesktopOverlayToggle = (): void => {
+    const bridge = getDesktopBridge()
+    if (!bridge || !desktopOverlayState.available) {
+      return
+    }
+
+    bridge.setOverlayVisible(!desktopOverlayState.visible)
   }
 
   return (
@@ -74,10 +131,12 @@ const App: React.FC = () => {
         clientDiagnostics={appState.clientDiagnostics}
         ttsSettings={appState.ttsSettings}
         ttsDiagnostics={appState.ttsDiagnostics}
+        desktopOverlayState={desktopOverlayState}
         onStart={handleStart}
         onStop={() => controller.stop()}
         onManualRevise={() => controller.requestManualRevision()}
         onOpenHistory={() => setIsHistoryOpen(true)}
+        onDesktopOverlayToggle={handleDesktopOverlayToggle}
         onSubtitleModeChange={(mode) => controller.setSubtitleMode(mode)}
         onSourceLanguageChange={(language) => controller.setSourceLanguage(language)}
         onTtsEnabledChange={(enabled) => controller.setTtsEnabled(enabled)}

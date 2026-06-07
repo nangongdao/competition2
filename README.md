@@ -35,6 +35,9 @@ Implemented product capabilities now include:
 - Secret-safe endurance preflight for checking Redis, Whisper, CUDA, and provider key readiness before long runs.
 - Electron desktop launcher that starts the built frontend, FastAPI backend, and a native desktop window from a double-click entry.
 - Electron single-instance, tray restore, minimize-to-tray, and startup-log menu behavior for a more software-like local desktop experience.
+- Electron floating subtitle overlay that opens a transparent always-on-top
+  subtitle window above other desktop apps while the main window remains the
+  control panel.
 - Windows desktop shortcut installer scripts for launching the app from the desktop.
 - Durable subtitle history separated from the short visible subtitle list.
 - Transcript copy and TXT download from the subtitle history panel.
@@ -84,8 +87,16 @@ On Windows, double-click `start-desktop.cmd` from the project root. The launcher
 2. Serves the built frontend from a local static server.
 3. Starts the FastAPI backend from `backend/.venv` when port `8000` is not already healthy.
 4. Opens the UI in an Electron `BrowserWindow`, not in a browser app-mode tab.
-5. Keeps a single app instance, supports tray restore, and hides to tray when minimized.
-6. Stops the services it started when the app window exits.
+5. Opens a transparent always-on-top subtitle overlay window for desktop-style
+   viewing over other apps and browser tabs.
+6. Keeps a single app instance, supports tray restore, minimize-to-tray,
+   floating-subtitle show/hide, and startup-log menu behavior.
+7. Stops the services it started when the app window exits.
+
+In desktop mode, use the main window as the control panel. Live subtitles appear
+in the floating overlay near the bottom of the screen, not only inside the main
+window. The control panel button `Floating subtitles on/off` and the tray menu
+can hide or restore the overlay without stopping the translation session.
 
 Startup logs are written to `logs/desktop-launcher.log`. Override paths or ports with `AI_INTERPRETER_PYTHON`, `AI_INTERPRETER_BACKEND_PORT`, or `AI_INTERPRETER_FRONTEND_PORT` when needed.
 

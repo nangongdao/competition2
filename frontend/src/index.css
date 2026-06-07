@@ -101,3 +101,107 @@ a,
     grid-template-columns: 1fr;
   }
 }
+
+html[data-surface='subtitle-overlay'],
+html[data-surface='subtitle-overlay'] body,
+html[data-surface='subtitle-overlay'] #root {
+  background: transparent;
+}
+
+html[data-surface='subtitle-overlay'] body {
+  overflow: hidden;
+}
+
+.desktop-subtitle-overlay-shell {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0 4vw 8vh;
+  pointer-events: none;
+}
+
+.desktop-subtitle-stack {
+  display: flex;
+  width: min(92vw, 980px);
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.desktop-subtitle-entry {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  background: rgba(4, 7, 11, 0.78);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.34);
+  text-align: center;
+  transition: border-color 0.2s ease, opacity 0.2s ease, transform 0.2s ease;
+}
+
+.desktop-subtitle-source {
+  color: rgba(226, 234, 245, 0.84);
+  font-size: 15px;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.desktop-subtitle-translated {
+  color: #ffffff;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.desktop-subtitle-entry.only-source .desktop-subtitle-source {
+  color: #ffffff;
+  font-size: 22px;
+  font-weight: 650;
+}
+
+.desktop-subtitle-entry.only-translated .desktop-subtitle-translated {
+  font-size: 26px;
+}
+
+.desktop-subtitle-entry.revised {
+  border-color: rgba(244, 200, 76, 0.58);
+}
+
+.desktop-subtitle-cursor {
+  align-self: center;
+  color: #f4c84c;
+  animation: subtitle-blink 0.7s infinite;
+}
+
+@media (max-width: 520px) {
+  .desktop-subtitle-overlay-shell {
+    padding: 0 16px 7vh;
+  }
+
+  .desktop-subtitle-stack {
+    width: 100%;
+  }
+
+  .desktop-subtitle-translated {
+    font-size: 21px;
+  }
+
+  .desktop-subtitle-entry.only-translated .desktop-subtitle-translated {
+    font-size: 23px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .desktop-subtitle-entry,
+  .desktop-subtitle-cursor {
+    animation: none;
+    transition: none;
+  }
+}

@@ -8,8 +8,10 @@ workflow. The launcher is a real desktop window, not a browser app-mode tab.
 ### 1. Scope / Trigger
 
 - Trigger: changes to `tools/desktop_launcher.py`, `frontend/electron/main.cjs`,
+  `frontend/electron/preload.cjs`,
   `start-desktop.cmd`, `start-desktop.ps1`, frontend build paths, backend
-  startup ports, Electron window behavior, or desktop shortcut install scripts.
+  startup ports, Electron window behavior, floating subtitle overlay behavior,
+  or desktop shortcut install scripts.
 - Scope: local Windows-first startup experience. This is not yet a packaged
   installer and does not replace the later system-audio capture evaluation.
 
@@ -72,6 +74,62 @@ Environment keys:
 | `AI_INTERPRETER_LOG_FILE` | Internal Electron path for opening launcher logs from the tray |
 | `VITE_WS_URL` | Override frontend WebSocket base URL at build time |
 
+## Scenario: Floating Subtitle Overlay
+
+### 1. Scope / Trigger
+
+- Trigger: changes to Electron preload IPC, transparent overlay window options,
+  desktop subtitle snapshot routing, or the `?surface=overlay` frontend entry.
+- Scope: desktop subtitle presentation only. It does not imply system-audio
+  capture, browser extension injection, or packaged installer support.
+
+### 2. Contracts
+
+- Electron should create the main app window as the control panel and a second
+  transparent, frameless, always-on-top subtitle overlay window.
+- The overlay window loads the same built frontend with
+  `?surface=overlay`; this route must render only subtitles and must not start
+  audio capture, WebSocket sessions, or backend requests.
+- The overlay window must stay click-through with `setIgnoreMouseEvents(true)`
+  so it does not block the app, browser tabs, video players, or meeting windows
+  underneath it.
+- The main renderer sends cloneable subtitle snapshots through the preload API;
+  the Electron main process forwards those snapshots to the overlay window.
+- The preload bridge must expose only the minimal desktop overlay API and must
+  preserve `contextIsolation: true`, `nodeIntegration: false`, and
+  `sandbox: true`.
+- The main control panel and tray menu must allow the user to hide or restore
+  the floating subtitle overlay without stopping the translation session.
+- Browser-only startup must keep the existing in-page subtitle renderer as the
+  fallback path when `window.aiInterpreterDesktop` is unavailable.
+- The overlay should use the primary display work area for MVP positioning and
+  reposition when display metrics change.
+
+### 3. Validation & Error Matrix
+
+| Condition | Required behavior |
+| --- | --- |
+| Desktop bridge is unavailable | Browser UI works, overlay controls stay hidden, in-page subtitles remain usable |
+| Overlay window finishes loading after subtitles already exist | Latest subtitle snapshot is replayed to the overlay |
+| User hides overlay | Overlay window hides, translation and history/export continue |
+| User restores overlay | Overlay window reappears without reconnecting the backend session |
+| Main window closes | Overlay window closes and launcher cleanup proceeds normally |
+| Display metrics change | Overlay bounds are refreshed to the primary work area |
+
+### 4. Tests Required
+
+- Run `node --check frontend\electron\main.cjs` after changing Electron main
+  process behavior.
+- Run `node --check frontend\electron\preload.cjs` after changing preload IPC.
+- Run `npm.cmd run test` in `frontend` after changing desktop subtitle snapshot
+  helpers or routing.
+- Run `npm.cmd run build` in `frontend` after changing the overlay entry,
+  TypeScript types, CSS, or Vite assets.
+- Manually smoke-test `start-desktop.cmd`: confirm the main control window
+  opens, the floating subtitle window is visible above other windows after
+  subtitles arrive, the overlay is click-through, and the control panel/tray can
+  hide and restore it.
+
 ### 4. Validation & Error Matrix
 
 | Condition | Required behavior |
@@ -110,6 +168,8 @@ Environment keys:
   CLI smoke check after changing Electron dependency wiring.
 - Run `node --check frontend\electron\main.cjs` after changing Electron main
   process behavior.
+- Run `node --check frontend\electron\preload.cjs` after changing Electron
+  preload behavior.
 - Run `npm.cmd run build` in `frontend` after changing Vite base paths,
   `index.html`, public assets, or `import.meta.env` usage.
 - Run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File

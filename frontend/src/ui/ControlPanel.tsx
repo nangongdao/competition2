@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 
+import type { DesktopOverlayState } from '../desktop/overlay'
 import type {
   AppStatus,
   ClientDiagnostics,
@@ -26,10 +27,12 @@ interface ControlPanelProps {
   clientDiagnostics: ClientDiagnostics
   ttsSettings: TtsSettings
   ttsDiagnostics: TtsDiagnostics
+  desktopOverlayState: DesktopOverlayState
   onStart: () => void
   onStop: () => void
   onManualRevise: () => void
   onOpenHistory: () => void
+  onDesktopOverlayToggle: () => void
   onSubtitleModeChange: (mode: SubtitleMode) => void
   onSourceLanguageChange: (language: SourceLanguage) => void
   onTtsEnabledChange: (enabled: boolean) => void
@@ -136,10 +139,12 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   clientDiagnostics,
   ttsSettings,
   ttsDiagnostics,
+  desktopOverlayState,
   onStart,
   onStop,
   onManualRevise,
   onOpenHistory,
+  onDesktopOverlayToggle,
   onSubtitleModeChange,
   onSourceLanguageChange,
   onTtsEnabledChange,
@@ -285,6 +290,28 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             History and export ({subtitleHistoryCount})
           </button>
         </div>
+
+        {desktopOverlayState.available ? (
+          <div style={buttonClipStyle}>
+            <button
+              type="button"
+              aria-pressed={desktopOverlayState.visible}
+              style={{
+                ...secondaryButtonStyle,
+                width: '100%',
+                background: desktopOverlayState.visible
+                  ? 'rgba(74,163,255,0.18)'
+                  : 'rgba(255,255,255,0.04)',
+                borderColor: desktopOverlayState.visible
+                  ? 'rgba(74,163,255,0.4)'
+                  : 'rgba(255,255,255,0.1)',
+              }}
+              onClick={onDesktopOverlayToggle}
+            >
+              {desktopOverlayState.visible ? 'Floating subtitles on' : 'Floating subtitles off'}
+            </button>
+          </div>
+        ) : null}
       </div>
 
       <div
