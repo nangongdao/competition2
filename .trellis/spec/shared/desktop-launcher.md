@@ -58,6 +58,8 @@ def wait_for_web_session(app_url: str) -> None: ...
   lifecycle console.
 - `tools/desktop_launcher.py --build` must run the frontend production build
   before serving `frontend/dist`.
+- Backend health wait must allow slow first-time Whisper CPU loads; do not use a
+  short 30-40 second timeout for local launcher startup.
 - The launcher serves `frontend/dist` from `127.0.0.1` on an available port by
   default.
 - The launcher reuses the requested backend port only when `/api/v1/health`

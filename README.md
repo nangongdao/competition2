@@ -105,6 +105,10 @@ launcher:
 5. Keeps a console window open while launcher-owned services are running. Press
    `Ctrl+C` or close that window to stop those services.
 
+The first backend start can take one or two minutes while the local Whisper ASR
+model loads or downloads. The launcher waits for backend health before opening
+the app URL; progress and failures are written to `logs/desktop-launcher.log`.
+
 Use `Settings` / `设置` in the web page to configure provider/model/API-key
 values without editing secret files by hand. Browser settings are saved through
 the local backend to `config/desktop-settings.local.json`, which is ignored by
