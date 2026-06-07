@@ -12,14 +12,18 @@ from pathlib import Path
 from tools.endurance_runner import (
     EnduranceRunnerError,
     GeneratedAudioSource,
+    MemoryMonitorSpec,
     RunnerConfig,
     RunnerState,
     Thresholds,
     WavAudioSource,
+    build_memory_summary,
     build_report,
     build_session_url,
     frames_per_chunk,
     pcm_frames_to_float32_bytes,
+    parse_args,
+    parse_memory_monitor,
     record_message,
     send_audio,
     validate_thresholds,
@@ -135,6 +139,43 @@ class EnduranceRunnerTests(unittest.TestCase):
         self.assertEqual(summary["revision_counts"], {"asr_correction": 1})
         self.assertEqual(summary["revision_sources"], {"audio_redecode": 1})
         self.assertEqual(summary["revision_triggers"], {"low_confidence": 1})
+
+    def test_build_report_summarizes_memory_samples(self) -> None:
+        state = RunnerState(sent_audio_chunks=3, sent_audio_bytes=19200)
+        state.memory_samples = [
+            {"label": "backend", "pid": 123, "elapsed_seconds": 0, "rss_mb": 100.0},
+            {"label": "backend", "pid": 123, "elapsed_seconds": 5, "rss_mb": 112.5},
+            {"label": "backend", "pid": 123, "elapsed_seconds": 10, "rss_mb": 109.0},
+        ]
+
+        report = build_report(
+            config=make_config(),
+            url="ws://localhost/session",
+            state=state,
+            started_at=10.0,
+            ended_at=20.0,
+        )
+
+        self.assertEqual(report["memory_samples"], state.memory_samples)
+        summary = report["summary"]
+        self.assertIsInstance(summary, dict)
+        memory = summary["memory"]
+        self.assertIsInstance(memory, dict)
+        self.assertEqual(memory["backend"]["sample_count"], 3)
+        self.assertEqual(memory["backend"]["start_rss_mb"], 100.0)
+        self.assertEqual(memory["backend"]["end_rss_mb"], 109.0)
+        self.assertEqual(memory["backend"]["peak_rss_mb"], 112.5)
+        self.assertEqual(memory["backend"]["growth_mb"], 9.0)
+        self.assertEqual(memory["backend"]["peak_growth_mb"], 12.5)
+
+    def test_build_memory_summary_keeps_unavailable_samples(self) -> None:
+        summary = build_memory_summary([
+            {"label": "backend", "pid": 123, "error": "access denied"},
+        ])
+
+        self.assertEqual(summary["backend"]["sample_count"], 0)
+        self.assertEqual(summary["backend"]["unavailable_samples"], 1)
+        self.assertEqual(summary["backend"]["errors"], ["access denied"])
 
     def test_build_report_summarizes_clean_subtitle_ordering(self) -> None:
         state = RunnerState()
@@ -285,6 +326,51 @@ class EnduranceRunnerTests(unittest.TestCase):
                     max_subtitle_order_violations=1,
                 ),
             )
+
+    def test_validate_thresholds_raises_for_memory_growth(self) -> None:
+        report = {
+            "summary": {
+                "memory": {
+                    "backend": {
+                        "growth_mb": 42.25,
+                    },
+                },
+            },
+        }
+
+        with self.assertRaisesRegex(EnduranceRunnerError, "backend memory growth"):
+            validate_thresholds(
+                report,
+                Thresholds(
+                    max_dropped_chunks=None,
+                    max_queue_depth=None,
+                    max_reconnects=None,
+                    max_latency_ms=None,
+                    min_received_ratio=None,
+                    max_memory_growth_mb=40,
+                ),
+            )
+
+    def test_parse_memory_monitor_accepts_labelled_pid(self) -> None:
+        monitor = parse_memory_monitor("backend=1234")
+
+        self.assertEqual(monitor, MemoryMonitorSpec(label="backend", pid=1234))
+
+    def test_parse_args_accepts_memory_options(self) -> None:
+        config = parse_args([
+            "--duration-seconds",
+            "1",
+            "--monitor-pid",
+            "backend=1234",
+            "--memory-sample-interval-seconds",
+            "2.5",
+            "--max-memory-growth-mb",
+            "15.5",
+        ])
+
+        self.assertEqual(config.memory_monitors, (MemoryMonitorSpec("backend", 1234),))
+        self.assertEqual(config.memory_sample_interval_seconds, 2.5)
+        self.assertEqual(config.thresholds.max_memory_growth_mb, 15.5)
 
 
 class FakeWebSocket:

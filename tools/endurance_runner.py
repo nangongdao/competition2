@@ -15,8 +15,10 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 import json
 import math
+import os
 from pathlib import Path
 import struct
+import subprocess
 import sys
 import time
 from typing import TypeVar
@@ -50,6 +52,13 @@ class Thresholds:
     max_latency_ms: int | None
     min_received_ratio: float | None
     max_subtitle_order_violations: int | None = None
+    max_memory_growth_mb: float | None = None
+
+
+@dataclass(frozen=True)
+class MemoryMonitorSpec:
+    label: str
+    pid: int
 
 
 @dataclass(frozen=True)
@@ -66,6 +75,8 @@ class RunnerConfig:
     receive_timeout_seconds: float
     output_path: Path
     thresholds: Thresholds
+    memory_monitors: tuple[MemoryMonitorSpec, ...] = ()
+    memory_sample_interval_seconds: float = 5.0
 
 
 @dataclass
@@ -93,6 +104,7 @@ class RunnerState:
     revisions_for_unknown_segments: int = 0
     unknown_revision_segment_ids: list[str] = field(default_factory=list)
     last_final_sequence: int | None = None
+    memory_samples: list[dict[str, object]] = field(default_factory=list)
 
 
 class GeneratedAudioSource:
@@ -305,6 +317,131 @@ def append_sample(samples: list[SampleT], value: SampleT, *, limit: int = 20) ->
         samples.append(value)
 
 
+def record_memory_samples(
+    state: RunnerState,
+    monitors: tuple[MemoryMonitorSpec, ...],
+    started_at: float,
+) -> None:
+    if not monitors:
+        return
+
+    now = time.time()
+    for monitor in monitors:
+        rss_bytes, error = read_process_rss_bytes(monitor.pid)
+        sample: dict[str, object] = {
+            "label": monitor.label,
+            "pid": monitor.pid,
+            "timestamp": now,
+            "elapsed_seconds": round(now - started_at, 3),
+        }
+        if rss_bytes is None:
+            sample["error"] = error or "RSS unavailable"
+        else:
+            sample["rss_mb"] = round(rss_bytes / 1024 / 1024, 3)
+        state.memory_samples.append(sample)
+
+
+def read_process_rss_bytes(pid: int) -> tuple[int | None, str | None]:
+    if pid <= 0:
+        return None, "PID must be positive"
+    if sys.platform == "win32":
+        return read_windows_process_rss_bytes(pid)
+    if sys.platform.startswith("linux"):
+        return read_linux_process_rss_bytes(pid)
+    return read_ps_process_rss_bytes(pid)
+
+
+def read_linux_process_rss_bytes(pid: int) -> tuple[int | None, str | None]:
+    status_path = Path("/proc") / str(pid) / "status"
+    try:
+        for line in status_path.read_text(encoding="utf-8").splitlines():
+            if line.startswith("VmRSS:"):
+                parts = line.split()
+                if len(parts) >= 2 and parts[1].isdigit():
+                    return int(parts[1]) * 1024, None
+                return None, f"Unable to parse VmRSS from {status_path}"
+    except OSError as exc:
+        return None, f"{type(exc).__name__}: {exc}"
+    return None, f"VmRSS not found in {status_path}"
+
+
+def read_ps_process_rss_bytes(pid: int) -> tuple[int | None, str | None]:
+    try:
+        result = subprocess.run(
+            ["ps", "-o", "rss=", "-p", str(pid)],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, f"{type(exc).__name__}: {exc}"
+
+    if result.returncode != 0:
+        message = result.stderr.strip() or result.stdout.strip() or "ps failed"
+        return None, message
+
+    value = result.stdout.strip()
+    if not value or not value.split()[0].isdigit():
+        return None, f"Unable to parse RSS from ps output: {value!r}"
+    return int(value.split()[0]) * 1024, None
+
+
+def read_windows_process_rss_bytes(pid: int) -> tuple[int | None, str | None]:
+    try:
+        import ctypes
+        from ctypes import wintypes
+    except ImportError as exc:
+        return None, f"{type(exc).__name__}: {exc}"
+
+    class PROCESS_MEMORY_COUNTERS_EX(ctypes.Structure):
+        _fields_ = [
+            ("cb", wintypes.DWORD),
+            ("PageFaultCount", wintypes.DWORD),
+            ("PeakWorkingSetSize", ctypes.c_size_t),
+            ("WorkingSetSize", ctypes.c_size_t),
+            ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+            ("QuotaPagedPoolUsage", ctypes.c_size_t),
+            ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+            ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+            ("PagefileUsage", ctypes.c_size_t),
+            ("PeakPagefileUsage", ctypes.c_size_t),
+            ("PrivateUsage", ctypes.c_size_t),
+        ]
+
+    process_query_limited_information = 0x1000
+    process_vm_read = 0x0010
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    psapi = ctypes.WinDLL("psapi", use_last_error=True)
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    psapi.GetProcessMemoryInfo.argtypes = [
+        wintypes.HANDLE,
+        ctypes.POINTER(PROCESS_MEMORY_COUNTERS_EX),
+        wintypes.DWORD,
+    ]
+    psapi.GetProcessMemoryInfo.restype = wintypes.BOOL
+
+    handle = kernel32.OpenProcess(
+        process_query_limited_information | process_vm_read,
+        False,
+        pid,
+    )
+    if not handle:
+        return None, f"OpenProcess failed: {ctypes.get_last_error()}"
+
+    try:
+        counters = PROCESS_MEMORY_COUNTERS_EX()
+        counters.cb = ctypes.sizeof(PROCESS_MEMORY_COUNTERS_EX)
+        ok = psapi.GetProcessMemoryInfo(handle, ctypes.byref(counters), counters.cb)
+        if not ok:
+            return None, f"GetProcessMemoryInfo failed: {ctypes.get_last_error()}"
+        return int(counters.WorkingSetSize), None
+    finally:
+        kernel32.CloseHandle(handle)
+
+
 async def receive_messages(websocket, state: RunnerState, stop_event: asyncio.Event) -> None:
     while not stop_event.is_set():
         try:
@@ -365,14 +502,35 @@ async def send_audio(
         await asyncio.sleep(max(0, next_chunk_at - loop.time()))
 
 
+async def sample_memory(
+    *,
+    config: RunnerConfig,
+    state: RunnerState,
+    started_at: float,
+    stop_event: asyncio.Event,
+) -> None:
+    record_memory_samples(state, config.memory_monitors, started_at)
+    while not stop_event.is_set():
+        await asyncio.sleep(config.memory_sample_interval_seconds)
+        record_memory_samples(state, config.memory_monitors, started_at)
+
+
 async def run_endurance(config: RunnerConfig) -> dict[str, object]:
     state = RunnerState()
     source = create_audio_source(config)
     url = build_session_url(config.ws_url, config.session_id)
     started_at = time.time()
     stop_event = asyncio.Event()
+    memory_task: asyncio.Task[None] | None = None
 
     try:
+        if config.memory_monitors:
+            memory_task = asyncio.create_task(sample_memory(
+                config=config,
+                state=state,
+                started_at=started_at,
+                stop_event=stop_event,
+            ))
         async with websockets.connect(url, max_size=None) as websocket:
             receiver_task = asyncio.create_task(receive_messages(websocket, state, stop_event))
             sender_task = asyncio.create_task(send_audio(
@@ -396,6 +554,11 @@ async def run_endurance(config: RunnerConfig) -> dict[str, object]:
                 receiver_task.cancel()
                 await asyncio.gather(receiver_task, return_exceptions=True)
     finally:
+        if memory_task is not None:
+            stop_event.set()
+            memory_task.cancel()
+            await asyncio.gather(memory_task, return_exceptions=True)
+            record_memory_samples(state, config.memory_monitors, started_at)
         source.close()
 
     ended_at = time.time()
@@ -449,6 +612,7 @@ def build_report(
         "received_message_counts": dict(sorted(state.received_message_counts.items())),
         "status_codes": dict(sorted(state.status_codes.items())),
         "errors": state.errors,
+        "memory_samples": state.memory_samples,
         "latest_diagnostics": diagnostics,
         "summary": {
             "backend_audio_chunks_received": int_value(diagnostics.get("audio_chunks_received")),
@@ -471,6 +635,7 @@ def build_report(
             "revision_sources": numeric_mapping(diagnostics.get("revision_sources")),
             "revision_triggers": numeric_mapping(diagnostics.get("revision_triggers")),
             "subtitle_ordering": build_subtitle_ordering_summary(state),
+            "memory": build_memory_summary(state.memory_samples),
         },
     }
 
@@ -509,6 +674,59 @@ def numeric_mapping(value: object) -> dict[str, int]:
         if isinstance(key, str):
             result[key] = int_value(item)
     return dict(sorted(result.items()))
+
+
+def build_memory_summary(samples: list[dict[str, object]]) -> dict[str, dict[str, object]]:
+    grouped: dict[str, list[dict[str, object]]] = {}
+    for sample in samples:
+        label = sample.get("label")
+        if isinstance(label, str):
+            grouped.setdefault(label, []).append(sample)
+
+    summary: dict[str, dict[str, object]] = {}
+    for label, label_samples in sorted(grouped.items()):
+        rss_values = [
+            float_value(sample.get("rss_mb"))
+            for sample in label_samples
+            if isinstance(sample.get("rss_mb"), int | float)
+        ]
+        errors = [
+            str(sample.get("error"))
+            for sample in label_samples
+            if isinstance(sample.get("error"), str)
+        ]
+        pids = [
+            int_value(sample.get("pid"))
+            for sample in label_samples
+            if isinstance(sample.get("pid"), int)
+        ]
+        latest_pid = pids[-1] if pids else 0
+        if not rss_values:
+            summary[label] = {
+                "pid": latest_pid,
+                "sample_count": 0,
+                "unavailable_samples": len(errors),
+                "errors": errors[:5],
+            }
+            continue
+
+        start_rss_mb = rss_values[0]
+        end_rss_mb = rss_values[-1]
+        peak_rss_mb = max(rss_values)
+        summary[label] = {
+            "pid": latest_pid,
+            "sample_count": len(rss_values),
+            "unavailable_samples": len(errors),
+            "start_rss_mb": round(start_rss_mb, 3),
+            "end_rss_mb": round(end_rss_mb, 3),
+            "peak_rss_mb": round(peak_rss_mb, 3),
+            "growth_mb": round(end_rss_mb - start_rss_mb, 3),
+            "peak_growth_mb": round(peak_rss_mb - start_rss_mb, 3),
+        }
+        if errors:
+            summary[label]["errors"] = errors[:5]
+
+    return summary
 
 
 def build_subtitle_ordering_summary(state: RunnerState) -> dict[str, object]:
@@ -585,6 +803,19 @@ def validate_thresholds(report: dict[str, object], thresholds: Thresholds) -> No
                     f"{order_violations} > {thresholds.max_subtitle_order_violations}",
                 )
 
+    if thresholds.max_memory_growth_mb is not None:
+        memory = summary.get("memory")
+        if isinstance(memory, dict):
+            for label, value in memory.items():
+                if not isinstance(label, str) or not isinstance(value, dict):
+                    continue
+                growth_mb = float_value(value.get("growth_mb"))
+                if growth_mb > thresholds.max_memory_growth_mb:
+                    failures.append(
+                        f"{label} memory growth "
+                        f"{growth_mb:.3f}MB > {thresholds.max_memory_growth_mb:.3f}MB",
+                    )
+
     if failures:
         raise EnduranceRunnerError("; ".join(failures))
 
@@ -595,6 +826,23 @@ def write_report(path: Path, report: dict[str, object]) -> None:
         json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+
+
+def parse_memory_monitor(value: str) -> MemoryMonitorSpec:
+    label = ""
+    pid_text = value
+    if "=" in value:
+        label, pid_text = value.split("=", 1)
+        label = label.strip()
+    pid_text = pid_text.strip()
+    if not pid_text.isdigit():
+        raise argparse.ArgumentTypeError(
+            "Memory monitor must be a PID or label=PID.",
+        )
+    pid = int(pid_text)
+    if pid <= 0:
+        raise argparse.ArgumentTypeError("Memory monitor PID must be positive.")
+    return MemoryMonitorSpec(label=label or f"pid-{pid}", pid=pid)
 
 
 def parse_args(argv: list[str] | None = None) -> RunnerConfig:
@@ -646,6 +894,31 @@ def parse_args(argv: list[str] | None = None) -> RunnerConfig:
         default=None,
         help="Fail if backend received / client sent audio chunk ratio is below this value.",
     )
+    parser.add_argument(
+        "--monitor-self",
+        action="store_true",
+        help="Sample RSS memory for the endurance runner process itself.",
+    )
+    parser.add_argument(
+        "--monitor-pid",
+        action="append",
+        type=parse_memory_monitor,
+        default=[],
+        metavar="LABEL=PID",
+        help="Sample RSS memory for a process PID; may be repeated.",
+    )
+    parser.add_argument(
+        "--memory-sample-interval-seconds",
+        type=float,
+        default=5.0,
+        help="Seconds between process memory samples when monitoring is enabled.",
+    )
+    parser.add_argument(
+        "--max-memory-growth-mb",
+        type=float,
+        default=None,
+        help="Fail if any monitored process RSS growth exceeds this value.",
+    )
 
     args = parser.parse_args(argv)
     if args.duration_seconds <= 0:
@@ -661,6 +934,14 @@ def parse_args(argv: list[str] | None = None) -> RunnerConfig:
         raise EnduranceRunnerError("Maximum subtitle order violations cannot be negative.")
     if args.min_received_ratio is not None and not 0 <= args.min_received_ratio <= 1:
         raise EnduranceRunnerError("Minimum received ratio must be between 0 and 1.")
+    if args.memory_sample_interval_seconds <= 0:
+        raise EnduranceRunnerError("Memory sample interval must be positive.")
+    if args.max_memory_growth_mb is not None and args.max_memory_growth_mb < 0:
+        raise EnduranceRunnerError("Maximum memory growth cannot be negative.")
+
+    memory_monitors = list(args.monitor_pid)
+    if args.monitor_self:
+        memory_monitors.insert(0, MemoryMonitorSpec(label="runner", pid=os.getpid()))
 
     return RunnerConfig(
         ws_url=args.url,
@@ -681,7 +962,10 @@ def parse_args(argv: list[str] | None = None) -> RunnerConfig:
             max_latency_ms=args.max_latency_ms,
             min_received_ratio=args.min_received_ratio,
             max_subtitle_order_violations=args.max_subtitle_order_violations,
+            max_memory_growth_mb=args.max_memory_growth_mb,
         ),
+        memory_monitors=tuple(memory_monitors),
+        memory_sample_interval_seconds=args.memory_sample_interval_seconds,
     )
 
 
