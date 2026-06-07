@@ -1,6 +1,10 @@
 import { AudioCapture } from '../audio/AudioCapture'
 import { TtsPlayer } from '../audio/TtsPlayer'
 import { WsClient } from '../network/WsClient'
+import {
+  getRuntimeWebSocketUrlFromSearch,
+  resolveWebSocketBaseUrl,
+} from '../network/ws-url'
 import { SubtitleRenderer } from '../subtitle/SubtitleRenderer'
 import { SubtitleStore } from '../subtitle/SubtitleStore'
 import type {
@@ -37,10 +41,6 @@ export interface AppState {
 
 
 type StateListener = (state: AppState) => void
-
-
-const DEFAULT_BACKEND_HOST = '127.0.0.1'
-const DEFAULT_BACKEND_PORT = 8000
 
 
 const WS_URL = getWebSocketBaseUrl()
@@ -462,13 +462,12 @@ function formatDiagnosticsText(
 
 
 function getWebSocketBaseUrl(): string {
-  const configuredUrl = import.meta.env.VITE_WS_URL
-  if (configuredUrl) {
-    return configuredUrl.replace(/\/$/, '')
-  }
-
-  const hostname = window.location.hostname || DEFAULT_BACKEND_HOST
-  return `ws://${hostname}:${DEFAULT_BACKEND_PORT}/api/v1/ws/translate`
+  const hasWindow = typeof window !== 'undefined'
+  return resolveWebSocketBaseUrl({
+    runtimeUrl: hasWindow ? getRuntimeWebSocketUrlFromSearch(window.location.search) : null,
+    configuredUrl: import.meta.env.VITE_WS_URL,
+    hostname: hasWindow ? window.location.hostname : null,
+  })
 }
 
 

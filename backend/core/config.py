@@ -26,9 +26,9 @@ class Settings(BaseSettings):
 
     # ASR
     asr_engine: str = "whisper"
-    whisper_model: str = "large-v3"
-    whisper_device: str = "cuda"
-    whisper_compute_type: str = "float16"
+    whisper_model: str = "small"
+    whisper_device: str = "cpu"
+    whisper_compute_type: str = "int8"
 
     # NMT
     nmt_engine: str = "claude"

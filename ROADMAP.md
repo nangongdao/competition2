@@ -29,6 +29,9 @@ Implemented capabilities now include:
 - Subtitle artifact validation tooling now checks TXT/SRT/VTT/Markdown exports for empty output, cue counts, timestamp overlaps, long gaps, revision markers, transcript counts, and Markdown timeline readability.
 - Unified interpreter validation suite now coordinates preflight, optional endurance runs, and optional subtitle artifact checks into one report for real-session acceptance evidence.
 - Electron desktop launcher that starts the built frontend, FastAPI backend, and a native desktop window from a double-click entry.
+- Desktop launcher backend startup now avoids unhealthy occupied backend ports,
+  injects the actual runtime WebSocket URL into Electron, and defaults desktop
+  ASR to a low-resource Whisper CPU/int8 profile.
 - Electron single-instance, tray restore, minimize-to-tray, and startup-log menu behavior for a more software-like local desktop experience.
 - Electron transparent always-on-top floating subtitle overlay so desktop users
   can view translations over other apps while using the main window as the

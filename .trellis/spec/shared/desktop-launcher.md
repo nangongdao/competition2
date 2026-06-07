@@ -22,16 +22,17 @@ start-desktop.cmd
 powershell.exe -File start-desktop.ps1
 install-desktop-shortcut.cmd
 powershell.exe -File install-desktop-shortcut.ps1
-python tools/desktop_launcher.py [--build] [--backend-port PORT] [--frontend-port PORT] [--no-splash]
+python tools/desktop_launcher.py [--build] [--backend-port PORT] [--frontend-port PORT] [--asr-profile PROFILE] [--no-splash]
 npm run desktop:window --prefix frontend
 ```
 
 ```python
 def ensure_frontend_build(force_build: bool) -> None: ...
-def start_backend(port: int) -> subprocess.Popen[str] | None: ...
+def resolve_backend_port(requested_port: int) -> int: ...
+def start_backend(port: int, asr_profile: str) -> subprocess.Popen[str] | None: ...
 def start_frontend_server(port: int) -> tuple[http.server.ThreadingHTTPServer, str]: ...
 def ensure_desktop_runtime() -> Path: ...
-def launch_desktop_window(url: str) -> subprocess.Popen[str]: ...
+def launch_desktop_window(url: str, backend_ws_url: str) -> subprocess.Popen[str]: ...
 ```
 
 ### 3. Contracts
@@ -44,11 +45,20 @@ def launch_desktop_window(url: str) -> subprocess.Popen[str]: ...
   before serving `frontend/dist`.
 - The launcher serves `frontend/dist` from `127.0.0.1` on an available port by
   default.
-- The launcher starts the FastAPI backend on `127.0.0.1:8000` only when
-  `/api/v1/health` is not already returning HTTP 200.
+- The launcher reuses the requested backend port only when `/api/v1/health`
+  returns HTTP 200 or the port is available.
+- If the requested backend port is occupied but not healthy, the launcher must
+  select another available local port. It must not kill or reset an unknown
+  process that owns the requested port.
+- The launcher must pass the actual backend WebSocket URL to the Electron
+  frontend at runtime so the renderer connects to the selected backend port.
 - The launcher opens Electron with `AI_INTERPRETER_DESKTOP_URL=<frontend-url>`.
 - The launcher opens Electron with `AI_INTERPRETER_LOG_FILE=<log-path>` so the
   tray menu can open startup diagnostics.
+- Desktop startup defaults to the low-resource ASR profile (`small`, `cpu`,
+  `int8`). `--asr-profile env` preserves process/dotenv ASR settings, and
+  `--asr-profile gpu` prefers `large-v3` on CUDA float16 for machines with
+  enough VRAM.
 - Electron must render the app in a `BrowserWindow` with `nodeIntegration:
   false`, `contextIsolation: true`, and `sandbox: true`.
 - Electron should enforce a single app instance and focus the existing window
@@ -70,6 +80,7 @@ Environment keys:
 | `AI_INTERPRETER_PYTHON` | Override Python executable for backend startup |
 | `AI_INTERPRETER_BACKEND_PORT` | Override backend port |
 | `AI_INTERPRETER_FRONTEND_PORT` | Override static frontend port, or `0` for any available port |
+| `AI_INTERPRETER_DESKTOP_ASR_PROFILE` | Desktop ASR profile: `light`, `cpu`, `gpu`, or `env` |
 | `AI_INTERPRETER_DESKTOP_URL` | Internal Electron URL injected by the Python launcher |
 | `AI_INTERPRETER_LOG_FILE` | Internal Electron path for opening launcher logs from the tray |
 | `VITE_WS_URL` | Override frontend WebSocket base URL at build time |
@@ -137,6 +148,7 @@ Environment keys:
 | `frontend/dist/index.html` is missing | Build frontend when `--build` is set; otherwise fail with a logged error |
 | `node_modules` is missing | Run `npm install` before `npm run build` |
 | Backend health endpoint is already HTTP 200 | Reuse existing backend and do not terminate it on launcher exit |
+| Requested backend port is occupied but health check fails | Select a different local backend port and inject the matching runtime WebSocket URL |
 | Backend process exits before health check | Show startup error and write details to launcher log |
 | Backend health timeout expires | Terminate the backend process started by the launcher |
 | Electron runtime is missing | Run `npm install` in `frontend`; fail with a logged error if Electron is still unavailable |
@@ -162,6 +174,8 @@ Environment keys:
 ### 6. Tests Required
 
 - Run `python tools/desktop_launcher.py --help` after changing CLI arguments.
+- Run `python -m unittest tools.test_desktop_launcher` after changing desktop
+  launcher helper behavior.
 - Run `python -m compileall tools/desktop_launcher.py` after changing launcher
   code.
 - Run `.\frontend\node_modules\.bin\electron.cmd --version` or another Electron
@@ -200,3 +214,22 @@ Start-Process `
 
 This delegates lifecycle management to `tools/desktop_launcher.py`, which owns
 build, service startup, Electron launch, logging, and cleanup.
+
+#### Wrong
+
+```typescript
+const wsUrl = import.meta.env.VITE_WS_URL || 'ws://127.0.0.1:8000/api/v1/ws/translate'
+```
+
+This breaks when the launcher avoids an unhealthy occupied backend port and
+starts the backend on a different local port.
+
+#### Correct
+
+```typescript
+const runtimeUrl = new URLSearchParams(window.location.search).get('wsUrl')
+const wsUrl = runtimeUrl || import.meta.env.VITE_WS_URL || defaultWsUrl
+```
+
+This lets Electron desktop startup inject the actual backend WebSocket URL at
+runtime while preserving browser and Vite-dev fallbacks.

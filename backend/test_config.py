@@ -68,6 +68,14 @@ class SettingsConfigTests(unittest.TestCase):
 
         self.assertEqual(settings.anthropic_api_key, "from-env")
 
+    def test_builtin_asr_defaults_are_low_resource(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            settings = Settings(_env_file=())
+
+        self.assertEqual(settings.whisper_model, "small")
+        self.assertEqual(settings.whisper_device, "cpu")
+        self.assertEqual(settings.whisper_compute_type, "int8")
+
 
 if __name__ == "__main__":
     unittest.main()

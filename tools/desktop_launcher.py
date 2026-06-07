@@ -10,15 +10,18 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+from dataclasses import dataclass
 import http.client
 import http.server
 import os
 from pathlib import Path
 import shutil
+import socket
 import subprocess
 import sys
 import threading
 import time
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -33,13 +36,43 @@ HOST = "127.0.0.1"
 DEFAULT_BACKEND_PORT = 8000
 DEFAULT_FRONTEND_PORT = 0
 BACKEND_HEALTH_PATH = "/api/v1/health"
+BACKEND_WS_PATH = "/api/v1/ws/translate"
 BACKEND_START_TIMEOUT_SECONDS = 35
+DEFAULT_DESKTOP_ASR_PROFILE = "light"
+DESKTOP_ASR_PROFILE_ENV = "AI_INTERPRETER_DESKTOP_ASR_PROFILE"
+WS_URL_QUERY_PARAM = "wsUrl"
 
 CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
 class LauncherError(RuntimeError):
     """Raised when the desktop launcher cannot complete startup."""
+
+
+@dataclass(frozen=True)
+class DesktopAsrProfile:
+    model: str
+    device: str
+    compute_type: str
+
+
+DESKTOP_ASR_PROFILES = {
+    "light": DesktopAsrProfile(
+        model="small",
+        device="cpu",
+        compute_type="int8",
+    ),
+    "cpu": DesktopAsrProfile(
+        model="small",
+        device="cpu",
+        compute_type="int8",
+    ),
+    "gpu": DesktopAsrProfile(
+        model="large-v3",
+        device="cuda",
+        compute_type="float16",
+    ),
+}
 
 
 class SplashWindow:
@@ -123,6 +156,128 @@ def write_log(message: str) -> None:
 def reset_log() -> None:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     LOG_FILE.write_text("", encoding="utf-8")
+
+
+def parse_port(value: str) -> int:
+    try:
+        port = int(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(f"Port must be an integer: {value}") from error
+
+    if port < 0 or port > 65535:
+        raise argparse.ArgumentTypeError("Port must be between 0 and 65535")
+    return port
+
+
+def get_env_port(name: str, default: int) -> int:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return parse_port(value)
+
+
+def is_port_available(port: int) -> bool:
+    if port == 0:
+        return True
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        try:
+            probe.bind((HOST, port))
+        except OSError:
+            return False
+    return True
+
+
+def find_available_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind((HOST, 0))
+        return int(probe.getsockname()[1])
+
+
+def resolve_backend_port(requested_port: int) -> int:
+    if requested_port == 0:
+        selected_port = find_available_port()
+        write_log(f"Backend port auto-selected: {HOST}:{selected_port}")
+        return selected_port
+
+    if is_backend_healthy(requested_port):
+        write_log(f"Backend already healthy on requested port {HOST}:{requested_port}")
+        return requested_port
+
+    if is_port_available(requested_port):
+        return requested_port
+
+    selected_port = find_available_port()
+    write_log(
+        "Backend port "
+        f"{HOST}:{requested_port} is occupied but not healthy; "
+        f"using {HOST}:{selected_port}"
+    )
+    return selected_port
+
+
+def build_backend_environment(port: int, asr_profile: str) -> dict[str, str]:
+    env = os.environ.copy()
+    env["PORT"] = str(port)
+    apply_desktop_asr_profile(env, asr_profile)
+    return env
+
+
+def apply_desktop_asr_profile(env: dict[str, str], asr_profile: str) -> None:
+    profile_name = (asr_profile or DEFAULT_DESKTOP_ASR_PROFILE).strip().lower()
+    if profile_name == "env":
+        write_log(
+            "Desktop ASR profile env selected; backend ASR settings come from "
+            "process environment and dotenv files."
+        )
+        return
+
+    profile = DESKTOP_ASR_PROFILES.get(profile_name)
+    if profile is None:
+        allowed = ", ".join(["env", *sorted(DESKTOP_ASR_PROFILES)])
+        raise LauncherError(
+            f"Unknown desktop ASR profile '{asr_profile}'. Choose one of: {allowed}."
+        )
+
+    set_default_env_value(env, "WHISPER_MODEL", profile.model)
+    set_default_env_value(env, "WHISPER_DEVICE", profile.device)
+    set_default_env_value(env, "WHISPER_COMPUTE_TYPE", profile.compute_type)
+    write_log(
+        f"Desktop ASR profile {profile_name}: "
+        f"WHISPER_MODEL={env['WHISPER_MODEL']}, "
+        f"WHISPER_DEVICE={env['WHISPER_DEVICE']}, "
+        f"WHISPER_COMPUTE_TYPE={env['WHISPER_COMPUTE_TYPE']}"
+    )
+
+
+def set_default_env_value(env: dict[str, str], key: str, value: str) -> None:
+    if env.get(key, "").strip():
+        return
+    env[key] = value
+
+
+def create_backend_ws_url(port: int) -> str:
+    return f"ws://{HOST}:{port}{BACKEND_WS_PATH}"
+
+
+def append_query_param(url: str, name: str, value: str) -> str:
+    parsed_url = urlsplit(url)
+    query_params = [
+        (key, current_value)
+        for key, current_value in parse_qsl(
+            parsed_url.query,
+            keep_blank_values=True,
+        )
+        if key != name
+    ]
+    query_params.append((name, value))
+    return urlunsplit((
+        parsed_url.scheme,
+        parsed_url.netloc,
+        parsed_url.path,
+        urlencode(query_params),
+        parsed_url.fragment,
+    ))
 
 
 def show_error(message: str) -> None:
@@ -229,7 +384,7 @@ def stream_process_output(process: subprocess.Popen[str], prefix: str) -> None:
         write_log(f"{prefix}: {line.rstrip()}")
 
 
-def start_backend(port: int) -> subprocess.Popen[str] | None:
+def start_backend(port: int, asr_profile: str) -> subprocess.Popen[str] | None:
     if is_backend_healthy(port):
         write_log(f"Backend already healthy on {HOST}:{port}")
         return None
@@ -245,11 +400,13 @@ def start_backend(port: int) -> subprocess.Popen[str] | None:
         "--port",
         str(port),
     ]
+    env = build_backend_environment(port, asr_profile)
 
     write_log(f"Starting backend: {' '.join(command)}")
     process = subprocess.Popen(
         command,
         cwd=BACKEND_DIR,
+        env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -327,16 +484,18 @@ def ensure_desktop_runtime() -> Path:
     raise LauncherError("Electron runtime is missing after npm install")
 
 
-def launch_desktop_window(url: str) -> subprocess.Popen[str]:
+def launch_desktop_window(url: str, backend_ws_url: str) -> subprocess.Popen[str]:
     electron_executable = ensure_desktop_runtime()
     if not ELECTRON_MAIN.exists():
         raise LauncherError(f"Electron main process file is missing: {ELECTRON_MAIN}")
 
     command = [str(electron_executable), str(ELECTRON_MAIN)]
+    desktop_url = append_query_param(url, WS_URL_QUERY_PARAM, backend_ws_url)
     env = os.environ.copy()
-    env["AI_INTERPRETER_DESKTOP_URL"] = url
+    env["AI_INTERPRETER_DESKTOP_URL"] = desktop_url
     env["AI_INTERPRETER_LOG_FILE"] = str(LOG_FILE)
 
+    write_log(f"Desktop backend WebSocket URL: {backend_ws_url}")
     write_log(f"Launching Electron desktop window: {' '.join(command)}")
     process = subprocess.Popen(
         command,
@@ -378,15 +537,30 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--backend-port",
-        type=int,
-        default=int(os.environ.get("AI_INTERPRETER_BACKEND_PORT", DEFAULT_BACKEND_PORT)),
-        help="FastAPI backend port",
+        type=parse_port,
+        default=get_env_port("AI_INTERPRETER_BACKEND_PORT", DEFAULT_BACKEND_PORT),
+        help=(
+            "Preferred FastAPI backend port. Use 0 to choose an available port; "
+            "occupied unhealthy ports are avoided automatically."
+        ),
     )
     parser.add_argument(
         "--frontend-port",
-        type=int,
-        default=int(os.environ.get("AI_INTERPRETER_FRONTEND_PORT", DEFAULT_FRONTEND_PORT)),
+        type=parse_port,
+        default=get_env_port("AI_INTERPRETER_FRONTEND_PORT", DEFAULT_FRONTEND_PORT),
         help="Local static frontend port, or 0 for an available port",
+    )
+    parser.add_argument(
+        "--asr-profile",
+        default=os.environ.get(
+            DESKTOP_ASR_PROFILE_ENV,
+            DEFAULT_DESKTOP_ASR_PROFILE,
+        ),
+        help=(
+            "Desktop ASR resource profile: light/cpu uses small Whisper on CPU "
+            "int8, gpu uses large-v3 on CUDA float16, env preserves dotenv "
+            "ASR settings."
+        ),
     )
     parser.add_argument(
         "--no-splash",
@@ -412,10 +586,14 @@ def main() -> int:
         frontend_server, frontend_url = start_frontend_server(args.frontend_port)
 
         splash.set_status("Starting backend")
-        backend_process = start_backend(args.backend_port)
+        backend_port = resolve_backend_port(args.backend_port)
+        backend_process = start_backend(backend_port, args.asr_profile)
 
         splash.set_status("Opening app window")
-        desktop_process = launch_desktop_window(frontend_url)
+        desktop_process = launch_desktop_window(
+            frontend_url,
+            create_backend_ws_url(backend_port),
+        )
         splash.close()
         desktop_process.wait()
 

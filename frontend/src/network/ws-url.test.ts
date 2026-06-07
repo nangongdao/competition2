@@ -1,0 +1,43 @@
+import assert from 'node:assert/strict'
+import { describe, it } from 'node:test'
+
+import {
+  getRuntimeWebSocketUrlFromSearch,
+  resolveWebSocketBaseUrl,
+} from './ws-url'
+
+
+describe('WebSocket URL resolution', () => {
+  it('prefers runtime desktop URL over build-time configuration', () => {
+    const url = resolveWebSocketBaseUrl({
+      runtimeUrl: 'ws://127.0.0.1:49321/api/v1/ws/translate',
+      configuredUrl: 'ws://127.0.0.1:8000/api/v1/ws/translate',
+      hostname: 'localhost',
+    })
+
+    assert.equal(url, 'ws://127.0.0.1:49321/api/v1/ws/translate')
+  })
+
+  it('uses configured Vite URL when no runtime URL is available', () => {
+    const url = resolveWebSocketBaseUrl({
+      configuredUrl: 'ws://127.0.0.1:8001/api/v1/ws/translate/',
+      hostname: 'localhost',
+    })
+
+    assert.equal(url, 'ws://127.0.0.1:8001/api/v1/ws/translate')
+  })
+
+  it('falls back to the current hostname and default backend port', () => {
+    const url = resolveWebSocketBaseUrl({ hostname: 'demo.local' })
+
+    assert.equal(url, 'ws://demo.local:8000/api/v1/ws/translate')
+  })
+
+  it('extracts decoded runtime URL from search params', () => {
+    const runtimeUrl = getRuntimeWebSocketUrlFromSearch(
+      '?surface=overlay&wsUrl=ws%3A%2F%2F127.0.0.1%3A49152%2Fapi%2Fv1%2Fws%2Ftranslate%2F',
+    )
+
+    assert.equal(runtimeUrl, 'ws://127.0.0.1:49152/api/v1/ws/translate')
+  })
+})

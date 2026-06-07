@@ -85,7 +85,8 @@ On Windows, double-click `start-desktop.cmd` from the project root. The launcher
 
 1. Builds the Vite frontend when needed.
 2. Serves the built frontend from a local static server.
-3. Starts the FastAPI backend from `backend/.venv` when port `8000` is not already healthy.
+3. Starts the FastAPI backend from `backend/.venv` when the requested backend
+   port is not already healthy.
 4. Opens the UI in an Electron `BrowserWindow`, not in a browser app-mode tab.
 5. Opens a transparent always-on-top subtitle overlay window for desktop-style
    viewing over other apps and browser tabs.
@@ -98,7 +99,24 @@ in the floating overlay near the bottom of the screen, not only inside the main
 window. The control panel button `Floating subtitles on/off` and the tray menu
 can hide or restore the overlay without stopping the translation session.
 
-Startup logs are written to `logs/desktop-launcher.log`. Override paths or ports with `AI_INTERPRETER_PYTHON`, `AI_INTERPRETER_BACKEND_PORT`, or `AI_INTERPRETER_FRONTEND_PORT` when needed.
+Startup logs are written to `logs/desktop-launcher.log`. If port `8000` is
+occupied by an unhealthy or stale process, the launcher chooses another local
+backend port and injects the matching WebSocket URL into the Electron window.
+Override paths, ports, or ASR profile with `AI_INTERPRETER_PYTHON`,
+`AI_INTERPRETER_BACKEND_PORT`, `AI_INTERPRETER_FRONTEND_PORT`, or
+`AI_INTERPRETER_DESKTOP_ASR_PROFILE` when needed.
+
+Desktop startup defaults to a low-resource ASR profile:
+
+```text
+WHISPER_MODEL=small
+WHISPER_DEVICE=cpu
+WHISPER_COMPUTE_TYPE=int8
+```
+
+Set `AI_INTERPRETER_DESKTOP_ASR_PROFILE=env` to use the ASR values from
+`backend/.env.local` exactly, or `AI_INTERPRETER_DESKTOP_ASR_PROFILE=gpu` to
+prefer `large-v3` on CUDA when your machine has enough VRAM.
 
 To create a Windows desktop shortcut, run:
 
@@ -162,8 +180,10 @@ Run the secret-safe preflight first:
 python tools/endurance_preflight.py --output reports/endurance-preflight-latest.json
 ```
 
-On CPU-only machines, set `WHISPER_DEVICE=cpu` and
-`WHISPER_COMPUTE_TYPE=int8` before starting the backend. To verify the actual
+The tracked template and built-in defaults use `WHISPER_MODEL=small`,
+`WHISPER_DEVICE=cpu`, and `WHISPER_COMPUTE_TYPE=int8` for first-run reliability.
+For higher accuracy on a GPU machine, set `WHISPER_MODEL=large-v3`,
+`WHISPER_DEVICE=cuda`, and `WHISPER_COMPUTE_TYPE=float16`. To verify the actual
 Whisper model load during preflight, add `--load-whisper-model`; this may
 download model files.
 
