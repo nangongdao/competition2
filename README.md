@@ -26,6 +26,10 @@ Implemented product capabilities now include:
 - Client diagnostics show which capture backend is active so AudioWorklet and fallback sessions can be compared.
 - Local WebSocket endurance runner for sending paced PCM audio and collecting diagnostics JSON reports.
 - Endurance reports now summarize API/revision counters and final-subtitle ordering anomalies.
+- Endurance reports can optionally sample runner/backend process RSS memory and
+  fail on configured memory-growth thresholds.
+- Subtitle artifact validator for checking exported TXT/SRT/VTT/Markdown files
+  from real sessions.
 - Secret-safe endurance preflight for checking Redis, Whisper, CUDA, and provider key readiness before long runs.
 - Electron desktop launcher that starts the built frontend, FastAPI backend, and a native desktop window from a double-click entry.
 - Electron single-instance, tray restore, minimize-to-tray, and startup-log menu behavior for a more software-like local desktop experience.
@@ -64,7 +68,7 @@ Recent validation:
 Recommended improvement sequence:
 
 1. Establish a real reliability baseline with 30-60 minute live endurance runs using Redis, Whisper, provider API keys, and `tools/endurance_runner.py`. Track queue depth, queue wait latency, queue drops, reconnects, subtitle ordering, memory growth, ASR latency, translation latency, revision latency, and API-call counts.
-2. Validate post-session artifacts in real sessions: confirm SRT/VTT timing, revised-segment markers, Markdown note readability, and unchanged TXT/diagnostics behavior while keeping the frontend export unit tests green.
+2. Validate post-session artifacts in real sessions with `tools/subtitle_artifact_validator.py`: confirm SRT/VTT timing, revised-segment markers, Markdown note readability, and unchanged TXT/diagnostics behavior while keeping the frontend export unit tests green.
 3. Validate the new AudioWorklet capture path in real sessions and compare chunk stability, dropped chunks, and latency against the ScriptProcessor fallback.
 4. Validate the local Web Speech voice playback in real browser/Electron sessions, then decide whether the next TTS slice needs provider-backed synthesis, audio artifact caching, or backend delivery.
 5. Keep the Electron desktop launcher for local demos, but defer full packaged desktop/system-audio capture until the browser workflow has measurable stability. At that point, evaluate Electron/Tauri capture, packaging, and memory requirements against real sessions.
@@ -132,11 +136,28 @@ float32 PCM chunks and capture a diagnostics report:
 python tools/endurance_runner.py --duration-seconds 1800 --source silence --output reports/endurance-30m.json --max-dropped-chunks 0 --max-queue-depth 8 --min-received-ratio 0.99 --max-subtitle-order-violations 0
 ```
 
+To include memory-growth evidence, pass the runner process and any backend
+process PIDs you want to watch:
+
+```bash
+python tools/endurance_runner.py --duration-seconds 1800 --source silence --output reports/endurance-30m.json --monitor-self --monitor-pid backend=<uvicorn_pid> --memory-sample-interval-seconds 5 --max-memory-growth-mb 150 --max-dropped-chunks 0 --max-queue-depth 8 --min-received-ratio 0.99 --max-subtitle-order-violations 0
+```
+
 For speech-like validation, provide a 16 kHz mono PCM WAV file:
 
 ```bash
 python tools/endurance_runner.py --duration-seconds 3600 --wav path/to/sample.wav --manual-revision-interval-seconds 300 --output reports/endurance-60m.json
 ```
+
+After a real session, validate exported subtitle artifacts:
+
+```bash
+python tools/subtitle_artifact_validator.py exports/session.txt exports/session.srt exports/session.vtt exports/session.md --output reports/subtitle-artifacts-latest.json
+```
+
+The artifact validator reports cue counts, timestamp overlaps, long gaps,
+revision markers, empty artifacts, transcript line counts, and Markdown timeline
+readability.
 
 ## Iteration Workflow
 

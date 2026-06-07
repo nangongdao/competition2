@@ -274,7 +274,10 @@ python tools/endurance_runner.py \
   --output reports/endurance-30m.json \
   --min-received-ratio 0.99 \
   --max-queue-depth 8 \
-  --max-subtitle-order-violations 0
+  --max-subtitle-order-violations 0 \
+  --monitor-self \
+  --monitor-pid backend=<uvicorn_pid> \
+  --max-memory-growth-mb 150
 ```
 
 Control message sent by the runner after audio transmission stops:
@@ -289,6 +292,7 @@ Core report helpers:
 def build_session_url(ws_url: str, session_id: str) -> str: ...
 def record_message(state: RunnerState, message: dict[str, object]) -> None: ...
 def build_report(...) -> dict[str, object]: ...
+def build_memory_summary(samples: list[dict[str, object]]) -> dict[str, dict[str, object]]: ...
 def validate_thresholds(report: dict[str, object], thresholds: Thresholds) -> None: ...
 ```
 
@@ -315,6 +319,10 @@ def validate_thresholds(report: dict[str, object], thresholds: Thresholds) -> No
   - a summary of backend received/dropped chunks, segment counts, reconnects,
     queue depth/capacity, received/sent chunk ratio, latency stats,
     API/revision counters, and final-subtitle ordering anomalies
+  - optional `memory_samples` entries when process monitors are configured
+  - `summary.memory` grouped by monitor label with process PID, sample count,
+    unavailable sample count, start/end/peak RSS, end-growth MB, and peak-growth
+    MB
   - `summary.subtitle_ordering.order_violation_count`, which combines duplicate
     final subtitles, out-of-order final subtitles, final-sequence gaps, and
     revisions that reference segments without a previously observed final
@@ -337,12 +345,15 @@ def validate_thresholds(report: dict[str, object], thresholds: Thresholds) -> No
 | Backend received/sent chunk ratio is below configured threshold | Raise a runner error and exit non-zero |
 | Average latency exceeds configured threshold | Raise a runner error and exit non-zero |
 | Subtitle order violations exceed configured threshold | Raise a runner error and exit non-zero |
+| Monitored process RSS growth exceeds configured threshold | Raise a runner error and exit non-zero |
+| A monitored process is unavailable | Keep an unavailable sample with an error; do not fail unless another configured threshold fails |
 
 ### 5. Good/Base/Bad Cases
 
 - Good: A 30-60 minute run sends paced WAV audio, receives diagnostics snapshots,
   writes a report under `reports/`, and fails if dropped chunks or latency exceed
-  the configured threshold.
+  the configured threshold. If `--monitor-self` or `--monitor-pid` are set, the
+  report also records process RSS growth.
 - Base: A short local smoke run sends generated silence to verify WebSocket
   connectivity and diagnostics emission.
 - Bad: The runner sends JSON-wrapped audio, changes backend message schemas, or
@@ -355,6 +366,8 @@ def validate_thresholds(report: dict[str, object], thresholds: Thresholds) -> No
   recording, report summarization, queue-depth reporting, received-ratio
   calculation, API/revision counter summaries, subtitle-order summaries, and
   threshold failures.
+- Unit tests for memory summary and memory-growth threshold failures must not
+  rely on machine-specific background processes.
 - Unit tests for sender completion must assert normal duration expiry leaves the
   receiver open for the drain window instead of setting the shared stop event.
 - `python -m unittest backend.test_endurance_runner`
@@ -380,6 +393,73 @@ await websocket.send(chunk)
 
 The backend receives binary float32 PCM bytes, the same shape produced by the
 browser capture path.
+
+## Scenario: Subtitle Artifact Validator
+
+### 1. Scope / Trigger
+
+- Trigger: changes to local validation tooling for exported subtitles,
+  transcripts, or learning-note artifacts.
+- Applies to `tools/subtitle_artifact_validator.py` and tests that validate real
+  export artifacts after a live session.
+- The validator reads already-exported files; it must not change frontend export
+  format or backend WebSocket schemas.
+
+### 2. Signatures
+
+CLI:
+
+```bash
+python tools/subtitle_artifact_validator.py \
+  exports/session.txt \
+  exports/session.srt \
+  exports/session.vtt \
+  exports/session.md \
+  --output reports/subtitle-artifacts-latest.json
+```
+
+Core helpers:
+
+```python
+def validate_artifact(path: Path, *, kind: str | None = None, long_gap_ms: int = 5000) -> dict[str, object]: ...
+def validate_artifact_text(text: str, *, kind: str, path_label: str = "", long_gap_ms: int = 5000) -> dict[str, object]: ...
+def build_validation_report(paths: list[Path], *, kind: str | None, long_gap_ms: int) -> dict[str, object]: ...
+```
+
+### 3. Contracts
+
+- Supported artifact kinds are `txt`, `srt`, `vtt`, and `markdown`; kind may be
+  inferred from file extension or overridden for all paths.
+- Timed subtitles must report cue count, invalid timestamp count, overlap count,
+  gap count, long-gap count, maximum gap, duration, and empty cue count.
+- Plain transcript validation must report numbered entry count plus source and
+  translation line counts.
+- Markdown validation must report heading count, bullet count, title presence,
+  timeline section presence, timeline entry count, source line count, and
+  translation line count.
+- All artifact kinds must report empty-output status and ASR/translation/generic
+  revision marker counts.
+- The CLI exits `0` only when every artifact is usable; otherwise it exits `2`
+  and still writes the JSON report when `--output` is provided.
+
+### 4. Validation & Error Matrix
+
+| Condition | Behavior |
+| --- | --- |
+| Artifact path is missing | Raise a validator error and exit non-zero |
+| Extension/kind is unsupported | Raise a validator error and exit non-zero |
+| VTT file only contains `WEBVTT` | Mark the artifact empty and unusable |
+| SRT/VTT cue timestamps are invalid | Mark timed artifact unusable |
+| SRT/VTT cues overlap | Mark timed artifact unusable |
+| Timed artifact has long gaps | Report long gaps for review; do not make it unusable by itself |
+| Markdown lacks title or timeline entries | Mark Markdown artifact unusable |
+| TXT lacks numbered entries | Mark TXT artifact unusable |
+
+### 5. Tests Required
+
+- Unit tests for SRT/VTT cue parsing, overlap/gap summaries, empty VTT handling,
+  Markdown readability metadata, plain transcript counts, extension detection,
+  report aggregation, and unsupported extensions.
 
 ## Scenario: Endurance Preflight and Redis Compatibility
 
