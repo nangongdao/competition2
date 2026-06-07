@@ -9,20 +9,23 @@ from loguru import logger
 from core.config import settings
 from core.exceptions import NMTError
 from models.segment import ContextWindow, Segment
+from services.language_config import source_language_label, target_language_label
 
 
 class NMTService:
-    SYSTEM_PROMPT = """You are a real-time interpreter translating English to Chinese.
-
-Rules:
-1. Translate naturally and fluently into Simplified Chinese
+    RULES_PROMPT = """Rules:
+1. Translate naturally and fluently into the target language
 2. Preserve technical terms, proper nouns, and brand names in their original form
 3. Maintain the speaker's tone consistently
 4. Use context from previous sentences to resolve ambiguities
-5. Output ONLY the Chinese translation, no explanations
+5. Output ONLY the target-language translation, no explanations
 6. Keep the translation concise and close to the original sentence length
 7. For incomplete sentences, translate only what is available
 """
+
+    SYSTEM_PROMPT = f"""You are a real-time interpreter translating English speech to Simplified Chinese.
+
+{RULES_PROMPT}"""
 
     def __init__(self) -> None:
         self._engine = settings.nmt_engine
@@ -88,21 +91,12 @@ Rules:
         try:
             import anthropic
 
-            context_text = context.to_context_text(max_sentences=settings.context_window_size)
-            user_message = f"""Previous context (for reference only, already translated):
----
-{context_text}
----
-
-Translate this sentence from English to Chinese:
-"{current.text_asr}"
-
-Translation:"""
+            user_message = self._build_translation_prompt(context, current)
 
             async with self._client.messages.stream(
                 model=settings.nmt_model,
                 max_tokens=1024,
-                system=self.SYSTEM_PROMPT,
+                system=self._build_system_prompt(current),
                 messages=[{"role": "user", "content": user_message}],
             ) as stream:
                 async for text in stream.text_stream:
@@ -119,20 +113,11 @@ Translation:"""
         current: Segment,
     ) -> AsyncIterator[str]:
         try:
-            context_text = context.to_context_text(max_sentences=settings.context_window_size)
             messages = [
-                {"role": "system", "content": self.SYSTEM_PROMPT},
+                {"role": "system", "content": self._build_system_prompt(current)},
                 {
                     "role": "user",
-                    "content": f"""Previous context (for reference only):
----
-{context_text}
----
-
-Translate this sentence from English to Chinese:
-"{current.text_asr}"
-
-Translation:""",
+                    "content": self._build_translation_prompt(context, current),
                 },
             ]
 
@@ -191,6 +176,27 @@ Translation:""",
         except Exception as exc:
             logger.error("OpenAI completion error: {}", exc)
             raise NMTError(f"OpenAI completion failed: {exc}")
+
+    def _build_system_prompt(self, current: Segment) -> str:
+        source_label = source_language_label(current.source_language)
+        target_label = target_language_label(current.target_language)
+        return f"""You are a real-time interpreter translating {source_label} speech to {target_label}.
+
+{self.RULES_PROMPT}"""
+
+    def _build_translation_prompt(self, context: ContextWindow, current: Segment) -> str:
+        context_text = context.to_context_text(max_sentences=settings.context_window_size)
+        source_label = source_language_label(current.source_language)
+        target_label = target_language_label(current.target_language)
+        return f"""Previous context (for reference only, already translated):
+---
+{context_text}
+---
+
+Translate this sentence from {source_label} to {target_label}:
+"{current.text_asr}"
+
+Translation:"""
 
     async def shutdown(self) -> None:
         self._client = None

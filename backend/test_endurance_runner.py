@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import struct
 import tempfile
 import unittest
@@ -10,6 +11,7 @@ from pathlib import Path
 
 from tools.endurance_runner import (
     EnduranceRunnerError,
+    GeneratedAudioSource,
     RunnerConfig,
     RunnerState,
     Thresholds,
@@ -19,6 +21,7 @@ from tools.endurance_runner import (
     frames_per_chunk,
     pcm_frames_to_float32_bytes,
     record_message,
+    send_audio,
     validate_thresholds,
 )
 
@@ -282,6 +285,59 @@ class EnduranceRunnerTests(unittest.TestCase):
                     max_subtitle_order_violations=1,
                 ),
             )
+
+
+class FakeWebSocket:
+    def __init__(self) -> None:
+        self.sent_messages: list[bytes | str] = []
+
+    async def send(self, message: bytes | str) -> None:
+        self.sent_messages.append(message)
+
+
+class EnduranceRunnerAsyncTests(unittest.IsolatedAsyncioTestCase):
+    async def test_send_audio_duration_end_leaves_receiver_open_for_drain(self) -> None:
+        config = RunnerConfig(
+            ws_url="ws://localhost:8000/api/v1/ws/translate",
+            session_id="abc123ef",
+            duration_seconds=0.01,
+            chunk_duration_ms=10,
+            sample_rate=16000,
+            source="silence",
+            wav_path=None,
+            tone_frequency_hz=440,
+            manual_revision_interval_seconds=0,
+            receive_timeout_seconds=2,
+            output_path=Path("reports/endurance-latest.json"),
+            thresholds=Thresholds(
+                max_dropped_chunks=None,
+                max_queue_depth=None,
+                max_reconnects=None,
+                max_latency_ms=None,
+                min_received_ratio=None,
+            ),
+        )
+        source = GeneratedAudioSource(
+            source="silence",
+            sample_rate=config.sample_rate,
+            chunk_duration_ms=config.chunk_duration_ms,
+            tone_frequency_hz=config.tone_frequency_hz,
+        )
+        state = RunnerState()
+        stop_event = asyncio.Event()
+        websocket = FakeWebSocket()
+
+        await send_audio(
+            websocket,
+            config=config,
+            source=source,
+            state=state,
+            stop_event=stop_event,
+        )
+
+        self.assertFalse(stop_event.is_set())
+        self.assertGreater(state.sent_audio_chunks, 0)
+        self.assertEqual(len(websocket.sent_messages), state.sent_audio_chunks)
 
 
 def make_config() -> RunnerConfig:

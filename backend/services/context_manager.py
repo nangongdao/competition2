@@ -88,6 +88,8 @@ class ContextManager:
             "id": segment.id,
             "text_asr": segment.text_asr,
             "confidence": segment.confidence,
+            "source_language": segment.source_language,
+            "target_language": segment.target_language,
             "text_translated": segment.text_translated,
             "status": segment.status,
             "timestamp": segment.timestamp,
@@ -119,6 +121,8 @@ class ContextManager:
                 id=data["id"],
                 text_asr=data["text_asr"],
                 confidence=data["confidence"],
+                source_language=data.get("source_language", "en"),
+                target_language=data.get("target_language", "zh-CN"),
                 text_translated=data.get("text_translated", ""),
                 status=data.get("status", "draft"),
                 timestamp=data.get("timestamp", 0),
@@ -140,6 +144,8 @@ class ContextManager:
             data = json.loads(raw)
             if data["id"] == segment.id:
                 data["text_translated"] = segment.text_translated
+                data["source_language"] = segment.source_language
+                data["target_language"] = segment.target_language
                 data["status"] = segment.status
                 data["revised_at"] = segment.revised_at or ""
                 data["revision_count"] = len(segment.revision_history)

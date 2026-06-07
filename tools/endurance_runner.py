@@ -34,6 +34,7 @@ DEFAULT_SAMPLE_RATE = 16000
 DEFAULT_RECEIVE_TIMEOUT_SECONDS = 2.0
 DEFAULT_OUTPUT_PATH = Path("reports/endurance-latest.json")
 MANUAL_REVISE_MESSAGE = json.dumps({"type": "manual_revise"})
+REQUEST_DIAGNOSTICS_MESSAGE = json.dumps({"type": "request_diagnostics"})
 SampleT = TypeVar("SampleT")
 
 
@@ -339,7 +340,6 @@ async def send_audio(
     while not stop_event.is_set():
         now = loop.time()
         if now - started_at >= config.duration_seconds:
-            stop_event.set()
             return
 
         chunk = source.next_chunk()
@@ -384,6 +384,11 @@ async def run_endurance(config: RunnerConfig) -> dict[str, object]:
             ))
 
             await sender_task
+            if not stop_event.is_set():
+                try:
+                    await websocket.send(REQUEST_DIAGNOSTICS_MESSAGE)
+                except ConnectionClosed:
+                    stop_event.set()
             try:
                 await asyncio.wait_for(receiver_task, timeout=config.receive_timeout_seconds)
             except TimeoutError:

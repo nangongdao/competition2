@@ -32,6 +32,7 @@ class FakeASRService:
         self.processed_event = processed_event
         self.processed_chunks: list[bytes] = []
         self.reset_calls = 0
+        self.language_updates: list[str] = []
         self._on_partial: Optional[PartialCallback] = None
         self._on_final: Optional[FinalCallback] = None
         self._last_audio_chunk = b""
@@ -41,6 +42,9 @@ class FakeASRService:
 
     def set_on_final(self, callback: FinalCallback) -> None:
         self._on_final = callback
+
+    def set_language(self, source_language: str) -> None:
+        self.language_updates.append(source_language)
 
     async def process_chunk(self, audio_bytes: bytes) -> int:
         self.processed_chunks.append(audio_bytes)
@@ -146,11 +150,17 @@ class PipelineTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         self.original_audio_queue_max_chunks = settings.audio_queue_max_chunks
         self.original_revision_enabled = settings.revision_enabled
+        self.original_diagnostics_emit_interval_seconds = (
+            settings.diagnostics_emit_interval_seconds
+        )
         settings.revision_enabled = False
 
     def tearDown(self) -> None:
         settings.audio_queue_max_chunks = self.original_audio_queue_max_chunks
         settings.revision_enabled = self.original_revision_enabled
+        settings.diagnostics_emit_interval_seconds = (
+            self.original_diagnostics_emit_interval_seconds
+        )
 
     async def test_audio_queue_overflow_emits_status_and_diagnostics(self) -> None:
         settings.audio_queue_max_chunks = 1
@@ -188,6 +198,28 @@ class PipelineTests(unittest.IsolatedAsyncioTestCase):
         await pipeline.stop()
         self.assertEqual(asr.reset_calls, 1)
         self.assertEqual(ctx.closed_sessions, ["queue-test"])
+
+    async def test_periodic_diagnostics_emit_audio_counts_without_asr_final(self) -> None:
+        settings.diagnostics_emit_interval_seconds = 0
+        messages: list[dict] = []
+        pipeline = Pipeline(
+            session_id="diagnostics-test",
+            asr=FakeASRService(),
+            nmt=FakeNMTService(["unused"]),
+            ctx_manager=FakeContextManager(),
+            revision=None,
+        )
+        pipeline.set_on_message(collect_messages(messages))
+
+        await pipeline.start()
+        await pipeline.process_audio(b"pcm-audio")
+
+        diagnostics = latest_diagnostics(messages)
+        self.assertEqual(diagnostics["audio_chunks_received"], 1)
+        self.assertEqual(diagnostics["audio_bytes_received"], 9)
+        self.assertEqual(diagnostics["audio_chunks_dropped"], 0)
+
+        await pipeline.stop()
 
     async def test_final_asr_segment_translates_and_updates_diagnostics(self) -> None:
         settings.audio_queue_max_chunks = 4
@@ -260,6 +292,52 @@ class PipelineTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ctx.closed_sessions, ["flow-test"])
         self.assertEqual(len(messages), message_count_before_stop + 1)
         self.assertEqual(latest_diagnostics(messages)["status"], "closed")
+
+    async def test_config_update_applies_language_to_future_segments(self) -> None:
+        processed_event = asyncio.Event()
+        messages: list[dict] = []
+        asr = FakeASRService(
+            final_text="bonjour",
+            confidence=0.91,
+            processed_event=processed_event,
+        )
+        nmt = FakeNMTService(["ni hao"])
+        ctx = FakeContextManager()
+        pipeline = Pipeline(
+            session_id="language-test",
+            asr=asr,
+            nmt=nmt,
+            ctx_manager=ctx,
+            revision=None,
+        )
+        pipeline.set_on_message(collect_messages(messages))
+
+        await pipeline.start()
+        await pipeline.update_config(language="fr", target_language="zh-CN")
+        await pipeline.process_audio(b"pcm-audio")
+        await asyncio.wait_for(processed_event.wait(), timeout=1)
+
+        segment = ctx.window.get_by_id("language-test_0")
+        self.assertIsNotNone(segment)
+        if segment is None:
+            raise AssertionError("Expected segment language-test_0")
+
+        self.assertEqual(asr.language_updates[-1], "fr")
+        self.assertEqual(segment.source_language, "fr")
+        self.assertEqual(segment.target_language, "zh-CN")
+        self.assertEqual(nmt.segments[0].source_language, "fr")
+        self.assertEqual(nmt.segments[0].target_language, "zh-CN")
+
+        status_messages = [
+            message
+            for message in messages
+            if message.get("type") == "status"
+        ]
+        self.assertTrue(
+            any(message.get("code") == "CONFIG_UPDATED" for message in status_messages),
+        )
+
+        await pipeline.stop()
 
 
 def collect_messages(messages: list[dict]) -> Callable[[dict], Awaitable[None]]:

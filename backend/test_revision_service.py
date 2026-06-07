@@ -17,6 +17,7 @@ class FakeNMTService:
         self.completion = completion
         self.translation_calls = 0
         self.completion_calls = 0
+        self.last_system_prompt = ""
 
     async def translate_stream(self, _context: ContextWindow, _segment: Segment):
         self.translation_calls += 1
@@ -25,6 +26,7 @@ class FakeNMTService:
 
     async def complete_text(self, _prompt: str, *, system_prompt: str) -> str:
         self.completion_calls += 1
+        self.last_system_prompt = system_prompt
         assert "ASR post-editor" in system_prompt
         return self.completion
 
@@ -165,6 +167,7 @@ class RevisionServiceTests(unittest.IsolatedAsyncioTestCase):
             id="s4_0",
             text_asr="grain sand",
             confidence=-1.2,
+            source_language="ja",
             text_translated="wrong translation",
         )
         context.add_segment(segment)
@@ -185,6 +188,7 @@ class RevisionServiceTests(unittest.IsolatedAsyncioTestCase):
         assert result is not None
         self.assertEqual(asr.redecode_calls, 1)
         self.assertEqual(nmt.completion_calls, 1)
+        self.assertIn("Japanese speech", nmt.last_system_prompt)
         self.assertEqual(result.source_text, "great sentence")
         self.assertEqual(result.correction_source, "llm_post_edit")
         self.assertIsNone(result.confidence)

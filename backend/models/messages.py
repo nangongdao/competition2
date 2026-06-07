@@ -33,6 +33,8 @@ class ServerMessage:
     diagnostics: Optional[dict[str, Any]] = None
     code: Optional[str] = None
     message: Optional[str] = None
+    source_language: Optional[str] = None
+    target_language: Optional[str] = None
     timestamp: float = field(default_factory=time.time)
 
     def to_dict(self) -> dict[str, Any]:
@@ -41,7 +43,14 @@ class ServerMessage:
 
 @dataclass
 class ClientMessage:
-    type: Literal["audio_chunk", "pause", "resume", "config", "manual_revise"]
+    type: Literal[
+        "audio_chunk",
+        "pause",
+        "resume",
+        "config",
+        "manual_revise",
+        "request_diagnostics",
+    ]
     data: Optional[bytes] = None
     timestamp: Optional[float] = None
     language: Optional[str] = None

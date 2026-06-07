@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_base_url: str = "https://api.openai.com/v1"
     nmt_model: str = "claude-sonnet-4-20250514"
+    source_language: str = "en"
+    target_language: str = "zh-CN"
 
     # Context window
     context_window_size: int = 10
@@ -53,6 +55,7 @@ class Settings(BaseSettings):
     audio_chunk_duration_ms: int = 100
     audio_ttl_seconds: int = 120
     audio_queue_max_chunks: int = 100
+    diagnostics_emit_interval_seconds: float = 1.0
 
     model_config = SettingsConfigDict(
         env_file=tuple(str(path) for path in ENV_FILE_PATHS),

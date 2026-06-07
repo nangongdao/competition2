@@ -99,14 +99,24 @@ class WebSocketHandler:
             return
 
         if msg_type == "config":
-            language = msg.get("language", "en")
-            target = msg.get("target_language", "zh")
-            logger.info("Config updated: {} -> {}", language, target)
+            language = msg.get("language")
+            target = msg.get("target_language")
+            await pipeline.update_config(language=language, target_language=target)
+            logger.info(
+                "Config updated for {}: {} -> {}",
+                pipeline.session_id,
+                pipeline.language_config.source_language,
+                pipeline.language_config.target_language,
+            )
             return
 
         if msg_type == "manual_revise":
             logger.info("Manual revision requested for session {}", pipeline.session_id)
             await pipeline.trigger_manual_revision()
+            return
+
+        if msg_type == "request_diagnostics":
+            await pipeline.emit_diagnostics()
             return
 
         logger.warning("Unknown message type: {}", msg_type)

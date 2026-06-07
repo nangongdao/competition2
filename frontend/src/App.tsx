@@ -65,6 +65,7 @@ const App: React.FC = () => {
         status={appState.status}
         connectionState={appState.connectionState}
         subtitleMode={appState.subtitleMode}
+        languageConfig={appState.languageConfig}
         subtitleHistoryCount={appState.subtitleHistory.length}
         translationRevisionCount={appState.translationRevisionCount}
         asrRevisionCount={appState.asrRevisionCount}
@@ -78,6 +79,7 @@ const App: React.FC = () => {
         onManualRevise={() => controller.requestManualRevision()}
         onOpenHistory={() => setIsHistoryOpen(true)}
         onSubtitleModeChange={(mode) => controller.setSubtitleMode(mode)}
+        onSourceLanguageChange={(language) => controller.setSourceLanguage(language)}
         onTtsEnabledChange={(enabled) => controller.setTtsEnabled(enabled)}
         onTtsVolumeChange={(volume) => controller.setTtsVolume(volume)}
         onTtsRateChange={(rate) => controller.setTtsRate(rate)}

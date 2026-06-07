@@ -20,6 +20,8 @@ export interface AsrFinalMessage {
   text: string
   confidence: number
   latency_ms?: number
+  source_language?: string
+  target_language?: string
 }
 
 export interface TranslationTokenMessage {
@@ -100,12 +102,21 @@ export interface AudioChunkMessage {
 }
 
 export interface ControlMessage {
-  type: 'pause' | 'resume' | 'config' | 'manual_revise'
-  language?: string
-  target_language?: string
+  type: 'pause' | 'resume' | 'config' | 'manual_revise' | 'request_diagnostics'
+  language?: SourceLanguage
+  target_language?: TargetLanguage
 }
 
 export type SubtitleMode = 'bilingual' | 'translation_only' | 'source_only'
+
+export type SourceLanguage = 'auto' | 'en' | 'ja' | 'ko' | 'es' | 'fr' | 'de'
+
+export type TargetLanguage = 'zh-CN'
+
+export interface LanguageConfig {
+  sourceLanguage: SourceLanguage
+  targetLanguage: TargetLanguage
+}
 
 export type AudioCaptureBackend = 'audio-worklet' | 'script-processor'
 

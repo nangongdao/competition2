@@ -3,8 +3,10 @@ import React, { useEffect, useState } from 'react'
 import type {
   AppStatus,
   ClientDiagnostics,
+  LanguageConfig,
   RevisionReason,
   SessionDiagnostics,
+  SourceLanguage,
   SubtitleMode,
   TtsDiagnostics,
   TtsSettings,
@@ -15,6 +17,7 @@ interface ControlPanelProps {
   status: AppStatus
   connectionState: string
   subtitleMode: SubtitleMode
+  languageConfig: LanguageConfig
   subtitleHistoryCount: number
   translationRevisionCount: number
   asrRevisionCount: number
@@ -28,6 +31,7 @@ interface ControlPanelProps {
   onManualRevise: () => void
   onOpenHistory: () => void
   onSubtitleModeChange: (mode: SubtitleMode) => void
+  onSourceLanguageChange: (language: SourceLanguage) => void
   onTtsEnabledChange: (enabled: boolean) => void
   onTtsVolumeChange: (volume: number) => void
   onTtsRateChange: (rate: number) => void
@@ -54,6 +58,17 @@ const MODE_OPTIONS: Array<{ label: string; value: SubtitleMode }> = [
   { label: 'Both', value: 'bilingual' },
   { label: 'Translation', value: 'translation_only' },
   { label: 'Source', value: 'source_only' },
+]
+
+
+const SOURCE_LANGUAGE_OPTIONS: Array<{ label: string; value: SourceLanguage }> = [
+  { label: 'Auto detect', value: 'auto' },
+  { label: 'English', value: 'en' },
+  { label: 'Japanese', value: 'ja' },
+  { label: 'Korean', value: 'ko' },
+  { label: 'Spanish', value: 'es' },
+  { label: 'French', value: 'fr' },
+  { label: 'German', value: 'de' },
 ]
 
 
@@ -112,6 +127,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   status,
   connectionState,
   subtitleMode,
+  languageConfig,
   subtitleHistoryCount,
   translationRevisionCount,
   asrRevisionCount,
@@ -125,6 +141,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   onManualRevise,
   onOpenHistory,
   onSubtitleModeChange,
+  onSourceLanguageChange,
   onTtsEnabledChange,
   onTtsVolumeChange,
   onTtsRateChange,
@@ -165,6 +182,43 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
       <div style={{ fontSize: '11px', color: '#91a0b3' }}>
         WebSocket: {connectionState}
       </div>
+
+      <label
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '92px minmax(0, 1fr)',
+          alignItems: 'center',
+          gap: '8px',
+          minHeight: '44px',
+          color: '#b9c5d3',
+          fontSize: '12px',
+        }}
+      >
+        <span>Source</span>
+        <select
+          value={languageConfig.sourceLanguage}
+          aria-label="Source language"
+          style={{
+            minWidth: 0,
+            width: '100%',
+            minHeight: '38px',
+            padding: '0 10px',
+            borderRadius: '10px',
+            border: '1px solid rgba(255,255,255,0.14)',
+            background: 'rgba(255,255,255,0.06)',
+            color: '#e6edf6',
+            fontSize: '12px',
+            fontWeight: 600,
+          }}
+          onChange={(event) => onSourceLanguageChange(parseSourceLanguage(event.currentTarget.value))}
+        >
+          {SOURCE_LANGUAGE_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </label>
 
       <div
         style={{
@@ -499,4 +553,10 @@ function formatCounterMap(values: Record<string, number> | undefined): string {
     .map(([key, value]) => `${key}:${value}`)
 
   return entries.length > 0 ? entries.join(', ') : '-'
+}
+
+
+function parseSourceLanguage(value: string): SourceLanguage {
+  const option = SOURCE_LANGUAGE_OPTIONS.find((item) => item.value === value)
+  return option?.value ?? 'en'
 }

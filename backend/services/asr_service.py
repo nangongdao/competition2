@@ -11,6 +11,7 @@ from loguru import logger
 
 from core.config import settings
 from core.exceptions import ASRError
+from services.language_config import normalize_source_language, whisper_language_code
 
 
 FinalCallback = Callable[[str, float], Awaitable[None]]
@@ -34,12 +35,16 @@ class ASRService:
         self._vad_enabled = True
         self._latest_input_audio_chunk = b""
         self._last_segment_audio_chunk = b""
+        self._source_language = normalize_source_language(settings.source_language)
 
     def set_on_partial(self, callback: PartialCallback) -> None:
         self._on_partial = callback
 
     def set_on_final(self, callback: FinalCallback) -> None:
         self._on_final = callback
+
+    def set_language(self, source_language: str) -> None:
+        self._source_language = normalize_source_language(source_language)
 
     async def initialize(self) -> None:
         if self._engine == "whisper":
@@ -141,7 +146,7 @@ class ASRService:
             self._model.transcribe,
             audio,
             beam_size=5,
-            language="en",
+            language=whisper_language_code(self._source_language),
             vad_filter=self._vad_enabled,
             without_timestamps=True,
         )
@@ -163,6 +168,7 @@ class ASRService:
         """Create isolated stream state that shares the initialized model."""
         service = ASRService()
         service._model = self._model
+        service._source_language = self._source_language
         return service
 
     def reset_session_state(self) -> None:

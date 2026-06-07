@@ -6,9 +6,11 @@ import { SubtitleStore } from '../subtitle/SubtitleStore'
 import type {
   AppStatus,
   ClientDiagnostics,
+  LanguageConfig,
   RevisionReason,
   ServerMessage,
   SessionDiagnostics,
+  SourceLanguage,
   SubtitleEntry,
   SubtitleMode,
   TtsDiagnostics,
@@ -20,6 +22,7 @@ export interface AppState {
   status: AppStatus
   connectionState: string
   subtitleMode: SubtitleMode
+  languageConfig: LanguageConfig
   translationRevisionCount: number
   asrRevisionCount: number
   lastRevisionReason: RevisionReason | null
@@ -60,6 +63,12 @@ const EMPTY_TTS_SETTINGS: TtsSettings = {
 }
 
 
+const DEFAULT_LANGUAGE_CONFIG: LanguageConfig = {
+  sourceLanguage: 'en',
+  targetLanguage: 'zh-CN',
+}
+
+
 const EMPTY_TTS_DIAGNOSTICS: TtsDiagnostics = {
   isSupported: false,
   enabled: false,
@@ -83,6 +92,7 @@ export class AppController {
     status: 'idle',
     connectionState: 'disconnected',
     subtitleMode: 'bilingual',
+    languageConfig: DEFAULT_LANGUAGE_CONFIG,
     translationRevisionCount: 0,
     asrRevisionCount: 0,
     lastRevisionReason: null,
@@ -175,6 +185,7 @@ export class AppController {
   async start(): Promise<void> {
     try {
       this._updateState({ status: 'capturing' })
+      this._wsClient.setLanguageConfig(this._state.languageConfig)
       this._wsClient.connect()
       await this._audioCapture.start()
       this._updateState({ status: 'translating' })
@@ -218,6 +229,15 @@ export class AppController {
     this._subtitleRenderer?.setMode(mode)
     this._syncSubtitles()
     this._updateState({ subtitleMode: mode })
+  }
+
+  setSourceLanguage(sourceLanguage: SourceLanguage): void {
+    const languageConfig = {
+      ...this._state.languageConfig,
+      sourceLanguage,
+    }
+    this._wsClient.setLanguageConfig(languageConfig)
+    this._updateState({ languageConfig })
   }
 
   setTtsEnabled(enabled: boolean): void {

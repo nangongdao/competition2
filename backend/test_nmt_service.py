@@ -74,6 +74,39 @@ class NMTServiceOpenAITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(tokens, ["你好", "<FINAL>"])
 
 
+    async def test_openai_prompt_uses_segment_language_pair(self) -> None:
+        service = NMTService()
+        fake_client = FakeOpenAIClient([
+            chunk_with_content("translated"),
+        ])
+        service._client = fake_client
+        context = ContextWindow(session_id="test-session", window_size=10)
+        current = Segment(
+            id="test-1",
+            text_asr="konnichiwa",
+            confidence=1.0,
+            source_language="ja",
+            target_language="zh-CN",
+        )
+
+        tokens = [
+            token
+            async for token in service._translate_openai(context, current)
+        ]
+
+        self.assertEqual(tokens, ["translated", "<FINAL>"])
+        request = fake_client.completions.last_request
+        self.assertIsNotNone(request)
+        if request is None:
+            raise AssertionError("Expected OpenAI request metadata.")
+        messages = request["messages"]
+        self.assertIsInstance(messages, list)
+        system_message = messages[0]["content"]
+        user_message = messages[1]["content"]
+        self.assertIn("Japanese speech to Simplified Chinese", system_message)
+        self.assertIn("from Japanese to Simplified Chinese", user_message)
+
+
 async def collect_tokens(service: NMTService) -> list[str]:
     context = ContextWindow(session_id="test-session", window_size=10)
     current = Segment(
