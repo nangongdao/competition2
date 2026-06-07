@@ -437,3 +437,36 @@ Added a web-first local launcher, browser-accessible local settings API, fronten
 ### Next Steps
 
 - None - task complete
+
+
+## Session 14: 补齐远程 ASR 设置入口
+
+**Date**: 2026-06-07
+**Task**: 补齐远程 ASR 设置入口
+**Branch**: `docs/delivery-pr-workflow`
+
+### Summary
+
+Added browser/Electron local settings for remote ASR transcription model/base URL/API key, mapped them into launcher ASR_OPENAI_* environment variables, documented official OpenAI Whisper API format, and verified frontend/backend tests.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `371f429` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
