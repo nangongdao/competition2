@@ -16,6 +16,7 @@ from services.local_settings import (
     LocalRuntimeSettings,
     LocalSettings,
     LocalTranslationSettings,
+    create_default_local_settings,
     create_settings_file_payload,
     create_settings_snapshot,
     merge_local_settings_update,
@@ -25,6 +26,11 @@ from services.local_settings import (
 
 
 class LocalSettingsTests(unittest.TestCase):
+    def test_default_settings_use_remote_asr_profile(self) -> None:
+        settings = create_default_local_settings()
+
+        self.assertEqual(settings.runtime.asr_profile, "remote")
+
     def test_snapshot_exposes_only_secret_presence(self) -> None:
         settings = LocalSettings(
             ui_language="en-US",

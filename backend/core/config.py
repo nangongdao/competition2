@@ -25,7 +25,10 @@ class Settings(BaseSettings):
     redis_protocol: int = 2
 
     # ASR
-    asr_engine: str = "whisper"
+    asr_engine: str = "openai"
+    asr_openai_model: str = "whisper-1"
+    asr_openai_api_key: str = ""
+    asr_openai_base_url: str = ""
     whisper_model: str = "small"
     whisper_device: str = "cpu"
     whisper_compute_type: str = "int8"

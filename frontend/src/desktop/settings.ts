@@ -24,7 +24,7 @@ export const DEFAULT_DESKTOP_SETTINGS: DesktopSettingsSnapshot = {
     hasAnthropicApiKey: false,
   },
   runtime: {
-    asrProfile: 'light',
+    asrProfile: 'remote',
     sourceLanguage: 'en',
   },
 }
@@ -285,7 +285,11 @@ function pickAsrProfile(
   value: unknown,
   fallback: DesktopAsrProfile,
 ): DesktopAsrProfile {
-  return value === 'light' || value === 'cpu' || value === 'gpu' || value === 'env'
+  return value === 'remote'
+    || value === 'light'
+    || value === 'cpu'
+    || value === 'gpu'
+    || value === 'env'
     ? value
     : fallback
 }

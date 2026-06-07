@@ -22,7 +22,7 @@ EXAMPLE_SETTINGS_PATH = CONFIG_DIR / "desktop-settings.example.json"
 
 SUPPORTED_UI_LANGUAGES = {"zh-CN", "en-US"}
 SUPPORTED_TRANSLATION_ENGINES = {"openai", "claude"}
-SUPPORTED_ASR_PROFILES = {"light", "cpu", "gpu", "env"}
+SUPPORTED_ASR_PROFILES = {"remote", "light", "cpu", "gpu", "env"}
 SUPPORTED_SOURCE_LANGUAGES = {"auto", "en", "ja", "ko", "es", "fr", "de"}
 
 
@@ -59,7 +59,7 @@ def create_default_local_settings() -> LocalSettings:
             anthropic_api_key="",
         ),
         runtime=LocalRuntimeSettings(
-            asr_profile="light",
+            asr_profile="remote",
             source_language="en",
         ),
     )

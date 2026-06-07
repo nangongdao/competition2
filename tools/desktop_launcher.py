@@ -42,7 +42,7 @@ DEFAULT_FRONTEND_PORT = 0
 BACKEND_HEALTH_PATH = "/api/v1/health"
 BACKEND_WS_PATH = "/api/v1/ws/translate"
 BACKEND_START_TIMEOUT_SECONDS = 180
-DEFAULT_DESKTOP_ASR_PROFILE = "light"
+DEFAULT_DESKTOP_ASR_PROFILE = "remote"
 DESKTOP_ASR_PROFILE_ENV = "AI_INTERPRETER_DESKTOP_ASR_PROFILE"
 WS_URL_QUERY_PARAM = "wsUrl"
 LAUNCH_MODES = {"desktop", "web"}
@@ -134,7 +134,7 @@ def normalize_desktop_settings(raw_settings: dict[object, object]) -> DesktopSet
         anthropic_api_key=get_string_value(translation, "anthropicApiKey"),
         asr_profile=clean_allowed_string(
             get_string_value(runtime, "asrProfile"),
-            {"env", *DESKTOP_ASR_PROFILES.keys()},
+            {"remote", "env", *DESKTOP_ASR_PROFILES.keys()},
         ),
         source_language=clean_allowed_string(
             get_string_value(runtime, "sourceLanguage"),
@@ -350,6 +350,11 @@ def resolve_desktop_asr_profile(
 
 def apply_desktop_asr_profile(env: dict[str, str], asr_profile: str) -> None:
     profile_name = (asr_profile or DEFAULT_DESKTOP_ASR_PROFILE).strip().lower()
+    if profile_name == "remote":
+        set_default_env_value(env, "ASR_ENGINE", "openai")
+        write_log("Desktop ASR profile remote: ASR_ENGINE=openai")
+        return
+
     if profile_name == "env":
         write_log(
             "Desktop ASR profile env selected; backend ASR settings come from "
@@ -359,16 +364,18 @@ def apply_desktop_asr_profile(env: dict[str, str], asr_profile: str) -> None:
 
     profile = DESKTOP_ASR_PROFILES.get(profile_name)
     if profile is None:
-        allowed = ", ".join(["env", *sorted(DESKTOP_ASR_PROFILES)])
+        allowed = ", ".join(["remote", "env", *sorted(DESKTOP_ASR_PROFILES)])
         raise LauncherError(
             f"Unknown desktop ASR profile '{asr_profile}'. Choose one of: {allowed}."
         )
 
+    set_default_env_value(env, "ASR_ENGINE", "whisper")
     set_default_env_value(env, "WHISPER_MODEL", profile.model)
     set_default_env_value(env, "WHISPER_DEVICE", profile.device)
     set_default_env_value(env, "WHISPER_COMPUTE_TYPE", profile.compute_type)
     write_log(
         f"Desktop ASR profile {profile_name}: "
+        f"ASR_ENGINE={env['ASR_ENGINE']}, "
         f"WHISPER_MODEL={env['WHISPER_MODEL']}, "
         f"WHISPER_DEVICE={env['WHISPER_DEVICE']}, "
         f"WHISPER_COMPUTE_TYPE={env['WHISPER_COMPUTE_TYPE']}"
@@ -720,10 +727,11 @@ def parse_args() -> argparse.Namespace:
         "--asr-profile",
         default=None,
         help=(
-            "Desktop ASR resource profile: light/cpu uses small Whisper on CPU "
-            "int8, gpu uses large-v3 on CUDA float16, env preserves dotenv "
-            "ASR settings. Defaults to AI_INTERPRETER_DESKTOP_ASR_PROFILE, "
-            "then local desktop settings, then light."
+            "Desktop ASR resource profile: remote uses OpenAI-compatible ASR, "
+            "light/cpu uses small Whisper on CPU int8, gpu uses large-v3 on "
+            "CUDA float16, env preserves dotenv ASR settings. Defaults to "
+            "AI_INTERPRETER_DESKTOP_ASR_PROFILE, then local desktop settings, "
+            "then remote."
         ),
     )
     parser.add_argument(

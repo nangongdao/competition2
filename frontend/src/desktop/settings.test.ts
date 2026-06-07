@@ -50,7 +50,7 @@ describe('desktop settings helpers', () => {
     assert.equal(settings.translation.openaiBaseUrl, 'https://example.test/v1')
     assert.equal(settings.translation.hasOpenaiApiKey, false)
     assert.equal(settings.translation.hasAnthropicApiKey, true)
-    assert.equal(settings.runtime.asrProfile, 'light')
+    assert.equal(settings.runtime.asrProfile, 'remote')
     assert.equal(settings.runtime.sourceLanguage, 'en')
   })
 

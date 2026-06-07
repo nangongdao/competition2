@@ -24,7 +24,7 @@ interface SettingsPanelProps {
 type SaveState = 'idle' | 'saving' | 'saved' | 'failed'
 
 
-const ASR_PROFILE_OPTIONS: DesktopAsrProfile[] = ['light', 'cpu', 'gpu', 'env']
+const ASR_PROFILE_OPTIONS: DesktopAsrProfile[] = ['remote', 'light', 'cpu', 'gpu', 'env']
 const TRANSLATION_ENGINE_OPTIONS: TranslationEngine[] = ['openai', 'claude']
 const SOURCE_LANGUAGE_OPTIONS: SourceLanguage[] = ['auto', 'en', 'ja', 'ko', 'es', 'fr', 'de']
 
@@ -401,12 +401,13 @@ function parseTranslationEngine(value: string): TranslationEngine {
 
 function parseAsrProfile(value: string): DesktopAsrProfile {
   switch (value) {
+    case 'remote':
     case 'cpu':
     case 'gpu':
     case 'env':
       return value
     default:
-      return 'light'
+      return 'remote'
   }
 }
 

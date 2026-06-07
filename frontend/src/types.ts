@@ -117,7 +117,7 @@ export type UiLanguage = 'zh-CN' | 'en-US'
 
 export type TranslationEngine = 'openai' | 'claude'
 
-export type DesktopAsrProfile = 'light' | 'cpu' | 'gpu' | 'env'
+export type DesktopAsrProfile = 'remote' | 'light' | 'cpu' | 'gpu' | 'env'
 
 export interface LanguageConfig {
   sourceLanguage: SourceLanguage

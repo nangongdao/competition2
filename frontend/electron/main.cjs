@@ -36,7 +36,7 @@ const SETTINGS_CHANNELS = {
 
 const UI_LANGUAGES = new Set(['zh-CN', 'en-US'])
 const TRANSLATION_ENGINES = new Set(['openai', 'claude'])
-const ASR_PROFILES = new Set(['light', 'cpu', 'gpu', 'env'])
+const ASR_PROFILES = new Set(['remote', 'light', 'cpu', 'gpu', 'env'])
 const SOURCE_LANGUAGES = new Set(['auto', 'en', 'ja', 'ko', 'es', 'fr', 'de'])
 
 let mainWindow = null
@@ -260,7 +260,7 @@ function createDefaultSettings() {
       anthropicApiKey: '',
     },
     runtime: {
-      asrProfile: 'light',
+      asrProfile: 'remote',
       sourceLanguage: 'en',
     },
   }

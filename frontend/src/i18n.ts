@@ -286,6 +286,7 @@ const UI_TEXT: Record<UiLanguage, UiText> = {
       clearAnthropicKey: '清空 Anthropic key',
       asrProfile: 'ASR 资源模式',
       asrProfileOptions: {
+        remote: 'Remote API',
         light: '轻量 CPU',
         cpu: 'CPU',
         gpu: 'GPU 高精度',
@@ -405,6 +406,7 @@ const UI_TEXT: Record<UiLanguage, UiText> = {
       clearAnthropicKey: 'Clear Anthropic key',
       asrProfile: 'ASR profile',
       asrProfileOptions: {
+        remote: 'Remote API',
         light: 'Light CPU',
         cpu: 'CPU',
         gpu: 'GPU high accuracy',

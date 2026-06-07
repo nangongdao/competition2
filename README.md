@@ -105,9 +105,12 @@ launcher:
 5. Keeps a console window open while launcher-owned services are running. Press
    `Ctrl+C` or close that window to stop those services.
 
-The first backend start can take one or two minutes while the local Whisper ASR
-model loads or downloads. The launcher waits for backend health before opening
-the app URL; progress and failures are written to `logs/desktop-launcher.log`.
+By default, web startup uses remote OpenAI-compatible ASR and does not download
+or load a local Whisper model. The remote ASR path reuses the configured
+OpenAI-compatible API key/base URL and expects the provider to support an audio
+transcription endpoint such as `/audio/transcriptions`. The launcher waits for
+backend health before opening the app URL; progress and failures are written to
+`logs/desktop-launcher.log`.
 
 Use `Settings` / `设置` in the web page to configure provider/model/API-key
 values without editing secret files by hand. Browser settings are saved through
@@ -134,17 +137,17 @@ Override paths, ports, or ASR profile with `AI_INTERPRETER_PYTHON`,
 `AI_INTERPRETER_BACKEND_PORT`, `AI_INTERPRETER_FRONTEND_PORT`, or
 `AI_INTERPRETER_DESKTOP_ASR_PROFILE` when needed.
 
-Web startup defaults to a low-resource ASR profile:
+Web startup defaults to the remote ASR profile:
 
 ```text
-WHISPER_MODEL=small
-WHISPER_DEVICE=cpu
-WHISPER_COMPUTE_TYPE=int8
+ASR_ENGINE=openai
+ASR_OPENAI_MODEL=whisper-1
 ```
 
 Set `AI_INTERPRETER_DESKTOP_ASR_PROFILE=env` to use the ASR values from
-`backend/.env.local` exactly, or `AI_INTERPRETER_DESKTOP_ASR_PROFILE=gpu` to
-prefer `large-v3` on CUDA when your machine has enough VRAM.
+`backend/.env.local` exactly. Set it to `light`, `cpu`, or `gpu` only when you
+want local Whisper; those local profiles may load or download model files on
+first use.
 
 ## Desktop-Style Startup (Optional)
 
@@ -174,7 +177,7 @@ without editing secret files by hand. The panel can save:
 - Interface language: Chinese or English.
 - OpenAI-compatible translation engine, model, base URL, and API key.
 - Anthropic API key for Claude-compatible use.
-- Desktop ASR profile (`light`, `cpu`, `gpu`, or `env`).
+- Desktop ASR profile (`remote`, `light`, `cpu`, `gpu`, or `env`).
 - Default source language for new sessions.
 
 Real values are written to `config/desktop-settings.local.json`, which is
@@ -194,17 +197,17 @@ Override paths, ports, or ASR profile with `AI_INTERPRETER_PYTHON`,
 `AI_INTERPRETER_BACKEND_PORT`, `AI_INTERPRETER_FRONTEND_PORT`, or
 `AI_INTERPRETER_DESKTOP_ASR_PROFILE` when needed.
 
-Desktop startup defaults to a low-resource ASR profile:
+Desktop startup defaults to the remote ASR profile:
 
 ```text
-WHISPER_MODEL=small
-WHISPER_DEVICE=cpu
-WHISPER_COMPUTE_TYPE=int8
+ASR_ENGINE=openai
+ASR_OPENAI_MODEL=whisper-1
 ```
 
 Set `AI_INTERPRETER_DESKTOP_ASR_PROFILE=env` to use the ASR values from
-`backend/.env.local` exactly, or `AI_INTERPRETER_DESKTOP_ASR_PROFILE=gpu` to
-prefer `large-v3` on CUDA when your machine has enough VRAM.
+`backend/.env.local` exactly. Set it to `light`, `cpu`, or `gpu` only when you
+want local Whisper; those local profiles may load or download model files on
+first use.
 
 To create a Windows desktop shortcut, run:
 

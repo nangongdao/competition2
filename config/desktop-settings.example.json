@@ -8,7 +8,7 @@
     "anthropicApiKey": ""
   },
   "runtime": {
-    "asrProfile": "light",
+    "asrProfile": "remote",
     "sourceLanguage": "en"
   }
 }

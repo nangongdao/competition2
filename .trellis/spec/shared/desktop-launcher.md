@@ -75,8 +75,11 @@ def wait_for_web_session(app_url: str) -> None: ...
 - The launcher opens Electron with `AI_INTERPRETER_DESKTOP_URL=<frontend-url>`.
 - The launcher opens Electron with `AI_INTERPRETER_LOG_FILE=<log-path>` so the
   tray menu can open startup diagnostics.
-- Desktop startup defaults to the low-resource ASR profile (`small`, `cpu`,
-  `int8`). `--asr-profile env` preserves process/dotenv ASR settings, and
+- Local startup defaults to the remote OpenAI-compatible ASR profile
+  (`ASR_ENGINE=openai`) and must not download or load local Whisper models
+  unless the user explicitly selects a local profile. `--asr-profile env`
+  preserves process/dotenv ASR settings, `--asr-profile light` and
+  `--asr-profile cpu` use `small` Whisper on CPU int8, and
   `--asr-profile gpu` prefers `large-v3` on CUDA float16 for machines with
   enough VRAM.
 - Desktop startup may read `config/desktop-settings.local.json` for local UI,
@@ -90,7 +93,7 @@ def wait_for_web_session(app_url: str) -> None: ...
   desktop mode after saving provider/model/API-key/ASR settings.
 - Desktop settings must be validated through allowlists before use:
   `uiLanguage` (`zh-CN`, `en-US`), `translation.engine` (`openai`, `claude`),
-  `runtime.asrProfile` (`light`, `cpu`, `gpu`, `env`), and
+  `runtime.asrProfile` (`remote`, `light`, `cpu`, `gpu`, `env`), and
   `runtime.sourceLanguage` (`auto`, `en`, `ja`, `ko`, `es`, `fr`, `de`).
 - Electron must render the app in a `BrowserWindow` with `nodeIntegration:
   false`, `contextIsolation: true`, and `sandbox: true`.
@@ -113,7 +116,7 @@ Environment keys:
 | `AI_INTERPRETER_PYTHON` | Override Python executable for backend startup |
 | `AI_INTERPRETER_BACKEND_PORT` | Override backend port |
 | `AI_INTERPRETER_FRONTEND_PORT` | Override static frontend port, or `0` for any available port |
-| `AI_INTERPRETER_DESKTOP_ASR_PROFILE` | Desktop ASR profile: `light`, `cpu`, `gpu`, or `env` |
+| `AI_INTERPRETER_DESKTOP_ASR_PROFILE` | Desktop ASR profile: `remote`, `light`, `cpu`, `gpu`, or `env` |
 | `AI_INTERPRETER_DESKTOP_URL` | Internal Electron URL injected by the Python launcher |
 | `AI_INTERPRETER_LOG_FILE` | Internal Electron path for opening launcher logs from the tray |
 | `VITE_WS_URL` | Override frontend WebSocket base URL at build time |

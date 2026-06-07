@@ -39,15 +39,30 @@ class DesktopLauncherTests(unittest.TestCase):
             env = desktop_launcher.build_backend_environment(8123, "light")
 
         self.assertEqual(env["PORT"], "8123")
+        self.assertEqual(env["ASR_ENGINE"], "whisper")
         self.assertEqual(env["WHISPER_MODEL"], "small")
         self.assertEqual(env["WHISPER_DEVICE"], "cpu")
         self.assertEqual(env["WHISPER_COMPUTE_TYPE"], "int8")
+
+    def test_build_backend_environment_applies_remote_profile_defaults(self) -> None:
+        with (
+            patch.dict(desktop_launcher.os.environ, {}, clear=True),
+            patch.object(desktop_launcher, "write_log"),
+        ):
+            env = desktop_launcher.build_backend_environment(8123, "remote")
+
+        self.assertEqual(env["PORT"], "8123")
+        self.assertEqual(env["ASR_ENGINE"], "openai")
+        self.assertNotIn("WHISPER_MODEL", env)
+        self.assertNotIn("WHISPER_DEVICE", env)
+        self.assertNotIn("WHISPER_COMPUTE_TYPE", env)
 
     def test_build_backend_environment_preserves_explicit_process_env(self) -> None:
         with (
             patch.dict(
                 desktop_launcher.os.environ,
                 {
+                    "ASR_ENGINE": "custom",
                     "WHISPER_MODEL": "base",
                     "WHISPER_DEVICE": "cuda",
                     "WHISPER_COMPUTE_TYPE": "float16",
@@ -58,6 +73,7 @@ class DesktopLauncherTests(unittest.TestCase):
         ):
             env = desktop_launcher.build_backend_environment(8123, "light")
 
+        self.assertEqual(env["ASR_ENGINE"], "custom")
         self.assertEqual(env["WHISPER_MODEL"], "base")
         self.assertEqual(env["WHISPER_DEVICE"], "cuda")
         self.assertEqual(env["WHISPER_COMPUTE_TYPE"], "float16")
@@ -67,6 +83,7 @@ class DesktopLauncherTests(unittest.TestCase):
             patch.dict(
                 desktop_launcher.os.environ,
                 {
+                    "ASR_ENGINE": "",
                     "WHISPER_MODEL": "",
                     "WHISPER_DEVICE": " ",
                     "WHISPER_COMPUTE_TYPE": "",
@@ -77,6 +94,7 @@ class DesktopLauncherTests(unittest.TestCase):
         ):
             env = desktop_launcher.build_backend_environment(8123, "light")
 
+        self.assertEqual(env["ASR_ENGINE"], "whisper")
         self.assertEqual(env["WHISPER_MODEL"], "small")
         self.assertEqual(env["WHISPER_DEVICE"], "cpu")
         self.assertEqual(env["WHISPER_COMPUTE_TYPE"], "int8")
@@ -89,6 +107,7 @@ class DesktopLauncherTests(unittest.TestCase):
             env = desktop_launcher.build_backend_environment(8123, "env")
 
         self.assertEqual(env["PORT"], "8123")
+        self.assertNotIn("ASR_ENGINE", env)
         self.assertNotIn("WHISPER_MODEL", env)
         self.assertNotIn("WHISPER_DEVICE", env)
         self.assertNotIn("WHISPER_COMPUTE_TYPE", env)
@@ -147,6 +166,15 @@ class DesktopLauncherTests(unittest.TestCase):
             profile = desktop_launcher.resolve_desktop_asr_profile(None, settings)
 
         self.assertEqual(profile, "gpu")
+
+    def test_resolve_desktop_asr_profile_defaults_to_remote(self) -> None:
+        with patch.dict(desktop_launcher.os.environ, {}, clear=True):
+            profile = desktop_launcher.resolve_desktop_asr_profile(
+                None,
+                desktop_launcher.DesktopSettings(),
+            )
+
+        self.assertEqual(profile, "remote")
 
     def test_resolve_desktop_asr_profile_prefers_cli_then_env(self) -> None:
         settings = desktop_launcher.DesktopSettings(asr_profile="gpu")

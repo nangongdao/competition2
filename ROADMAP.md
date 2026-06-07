@@ -32,8 +32,9 @@ Implemented capabilities now include:
   default browser from a double-click entry without requiring Electron.
 - Electron desktop launcher that starts the built frontend, FastAPI backend, and a native desktop window from a double-click entry.
 - Desktop launcher backend startup now avoids unhealthy occupied backend ports,
-  injects the actual runtime WebSocket URL into Electron, and defaults desktop
-  ASR to a low-resource Whisper CPU/int8 profile.
+  injects the actual runtime WebSocket URL into Electron/browser startup, and
+  defaults local startup ASR to remote OpenAI-compatible transcription while
+  keeping local Whisper profiles optional.
 - Electron single-instance, tray restore, minimize-to-tray, and startup-log menu behavior for a more software-like local desktop experience.
 - Electron transparent always-on-top floating subtitle overlay so desktop users
   can view translations over other apps while using the main window as the
