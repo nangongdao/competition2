@@ -1,0 +1,88 @@
+{
+  "audio_source": "silence",
+  "chunk_duration_ms": 100,
+  "duration_seconds": 62.093,
+  "ended_at": 1780813987.6865218,
+  "errors": [],
+  "latest_diagnostics": {
+    "api_call_counts": {},
+    "asr_segments": 0,
+    "audio_bytes_received": 3840000,
+    "audio_chunks_dropped": 0,
+    "audio_chunks_received": 600,
+    "audio_queue_capacity": 100,
+    "audio_queue_depth": 0,
+    "audio_queue_max_depth": 1,
+    "duration_ms": 60018,
+    "latency": {
+      "audio_queue_wait_ms": {
+        "avg_ms": 0,
+        "count": 600,
+        "max_ms": 16
+      }
+    },
+    "reconnect_count": 0,
+    "revision_counts": {},
+    "revision_segments": 0,
+    "revision_sources": {},
+    "revision_triggers": {},
+    "session_id": "4a336157",
+    "started_at": 1780813925.6590593,
+    "status": "running",
+    "translation_segments": 0
+  },
+  "manual_revision_requests": 0,
+  "received_message_counts": {
+    "session_diagnostics": 61,
+    "status": 1
+  },
+  "sample_rate": 16000,
+  "sent_audio_bytes": 3840000,
+  "sent_audio_chunks": 600,
+  "session_id": "4a336157",
+  "started_at": 1780813925.5935462,
+  "status_codes": {
+    "SESSION_STARTED": 1
+  },
+  "summary": {
+    "api_call_counts": {},
+    "asr_segments": 0,
+    "backend_audio_bytes_received": 3840000,
+    "backend_audio_chunks_dropped": 0,
+    "backend_audio_chunks_received": 600,
+    "backend_audio_queue_capacity": 100,
+    "backend_audio_queue_depth": 0,
+    "backend_audio_queue_max_depth": 1,
+    "backend_received_ratio": 1.0,
+    "latency": {
+      "audio_queue_wait_ms": {
+        "avg_ms": 0,
+        "count": 600,
+        "max_ms": 16
+      }
+    },
+    "reconnect_count": 0,
+    "revision_counts": {},
+    "revision_segments": 0,
+    "revision_sources": {},
+    "revision_triggers": {},
+    "subtitle_ordering": {
+      "duplicate_final_segment_ids": [],
+      "duplicate_final_segments": 0,
+      "final_sequence_gap_events": 0,
+      "final_sequence_gap_samples": [],
+      "missing_final_segment_estimate": 0,
+      "order_violation_count": 0,
+      "out_of_order_final_segment_ids": [],
+      "out_of_order_final_segments": 0,
+      "revisions_for_unknown_segments": 0,
+      "translation_final_messages": 0,
+      "unique_final_segments": 0,
+      "unknown_revision_segment_ids": [],
+      "unparseable_final_segment_ids": [],
+      "unparseable_final_segments": 0
+    },
+    "translation_segments": 0
+  },
+  "url": "ws://localhost:8000/api/v1/ws/translate/4a336157"
+}

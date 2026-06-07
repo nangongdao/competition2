@@ -38,15 +38,22 @@ class SessionDiagnostics:
         first_token_latency_ms: int | None,
         final_latency_ms: int | None,
     ) -> None: ...
-    def record_revision(
-        self,
-        *,
-        reason: str,
-        source: str | None,
+def record_revision(
+    self,
+    *,
+    reason: str,
+    source: str | None,
         trigger: str | None,
         latency_ms: int | None,
     ) -> None: ...
     def snapshot(self) -> dict: ...
+```
+
+Backend pipeline diagnostics request:
+
+```python
+async def Pipeline.emit_diagnostics() -> None:
+    """Emit the current session diagnostics snapshot over the WebSocket."""
 ```
 
 Backend context/session:
@@ -114,6 +121,16 @@ Backend audio queue:
 - Queue diagnostics must expose current depth, maximum observed depth, queue capacity, and average/max queue wait latency so long-session runs can detect backlog before chunks drop.
 - Queue overflow increments `audio_chunks_dropped`, emits status code `AUDIO_QUEUE_FULL`, and emits a diagnostics snapshot.
 - `Pipeline.stop()` cancels the audio worker and silence timer so in-flight ASR/NMT/revision work does not continue after disconnect.
+- While audio is arriving, `Pipeline` emits periodic `session_diagnostics`
+  snapshots at `settings.diagnostics_emit_interval_seconds` so silent input or
+  delayed ASR finals still expose received chunk counts and queue depth.
+
+WebSocket control diagnostics:
+
+- Clients and local validation tools may send
+  `{"type": "request_diagnostics"}` over the control channel.
+- The backend responds with the current `session_diagnostics` payload without
+  mutating revision counters, audio counters, or session state.
 
 Diagnostics response:
 
@@ -163,6 +180,8 @@ Latency keys:
 | Same session connects while old pipeline is active | Stop old pipeline before installing the new one; old handler must not pop the new pipeline |
 | Audio queue grows without overflowing | Update `audio_queue_depth`, `audio_queue_max_depth`, and `audio_queue_wait_ms` without emitting an error |
 | Audio queue is full | Drop the chunk, increment diagnostics, emit `AUDIO_QUEUE_FULL` |
+| Audio arrives but no ASR final is produced | Periodic diagnostics still expose received chunk counts |
+| Client sends `request_diagnostics` | Emit one current diagnostics snapshot |
 | WebSocket disconnects | Cancel worker/silence tasks and reset ASR session buffers/callbacks |
 | Redis meta exists but reconnect count is missing | `hincrby` creates/updates the field; do not reset segment count |
 | Backend diagnostics are unavailable at startup | Frontend still reports client diagnostics and can export them |
@@ -187,6 +206,8 @@ Latency keys:
     updates the context segment, and records queue wait/capture/translation latency
   - `stop()` resets ASR session state, closes the context session, emits closed
     diagnostics, and ignores later audio chunks
+  - periodic diagnostics expose received audio counts even when no ASR final is
+    produced
 - Revision tests must keep passing after per-session revision counters are added.
 - Frontend build must pass after adding `SessionDiagnosticsMessage`, `ClientDiagnostics`, and diagnostics export UI.
 - For future integration tests:
@@ -256,6 +277,12 @@ python tools/endurance_runner.py \
   --max-subtitle-order-violations 0
 ```
 
+Control message sent by the runner after audio transmission stops:
+
+```json
+{"type": "request_diagnostics"}
+```
+
 Core report helpers:
 
 ```python
@@ -275,6 +302,10 @@ def validate_thresholds(report: dict[str, object], thresholds: Thresholds) -> No
   configured sample rate.
 - Manual revision controls are sent as text JSON
   `{"type": "manual_revise"}` when a positive interval is configured.
+- After the audio sender finishes normally, the runner sends
+  `{"type": "request_diagnostics"}` and keeps receiving for
+  `receive_timeout_seconds` so the final report is not limited to the last
+  periodic diagnostics tick.
 - Reports are JSON files containing:
   - client-side sent chunk/byte counts
   - received message counts
@@ -299,6 +330,7 @@ def validate_thresholds(report: dict[str, object], thresholds: Thresholds) -> No
 | WAV is not mono | Fail before connecting |
 | WAV sample rate differs from configured sample rate | Fail before connecting |
 | WebSocket closes during the run | Stop receiving and write the report from collected data |
+| Audio sending finishes normally | Request final diagnostics before closing the WebSocket |
 | Dropped chunks exceed configured threshold | Raise a runner error and exit non-zero |
 | Backend audio queue max depth exceeds configured threshold | Raise a runner error and exit non-zero |
 | Reconnects exceed configured threshold | Raise a runner error and exit non-zero |
@@ -323,6 +355,8 @@ def validate_thresholds(report: dict[str, object], thresholds: Thresholds) -> No
   recording, report summarization, queue-depth reporting, received-ratio
   calculation, API/revision counter summaries, subtitle-order summaries, and
   threshold failures.
+- Unit tests for sender completion must assert normal duration expiry leaves the
+  receiver open for the drain window instead of setting the shared stop event.
 - `python -m unittest backend.test_endurance_runner`
 - `python -m compileall tools backend/test_endurance_runner.py`
 - A real reliability baseline still requires a live backend with Redis, Whisper,

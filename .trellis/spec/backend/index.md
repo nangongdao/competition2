@@ -24,6 +24,7 @@
 | [ai-sdk-integration.md](./ai-sdk-integration.md)     | Vercel AI SDK, tool calling, prompt patterns       | AI-powered features                |
 | [ai-interpreter-revision-contract.md](./ai-interpreter-revision-contract.md) | Segment-audio ASR correction and revision WebSocket contract | Modifying AI interpreter correction or revision payloads |
 | [ai-interpreter-session-diagnostics.md](./ai-interpreter-session-diagnostics.md) | Live session diagnostics, queueing, reconnect, and isolation contract | Modifying AI interpreter session lifecycle or diagnostics payloads |
+| [ai-interpreter-language-config.md](./ai-interpreter-language-config.md) | Live source-language to Chinese configuration contract | Modifying language selection, ASR language parameters, or translation prompts |
 | [quality.md](./quality.md)                           | Pre-commit checklist for backend code              | Before committing                  |
 
 ---

@@ -9,6 +9,8 @@ The current documented baseline is an implemented V2 product slice.
 Implemented product capabilities now include:
 
 - Live audio capture to WebSocket translation flow.
+- Session-level source-language selection for English, automatic detection, and
+  common foreign-language inputs, with Chinese kept as the target language.
 - Manual revision triggering from the frontend control panel.
 - Silence-based and sentence-count-based backend revision checks.
 - Bilingual subtitle entries with source text and translated text.
@@ -16,6 +18,9 @@ Implemented product capabilities now include:
 - Real ASR correction through cached segment audio and Whisper re-decode, with LLM post-edit fallback.
 - Live session diagnostics for latency, dropped chunks, reconnects, revision counters, and API call counters.
 - Backend audio-queue diagnostics for current depth, peak depth, capacity, and queue wait latency.
+- Periodic backend diagnostics and explicit diagnostics requests for endurance
+  runs where silence or delayed ASR finals would otherwise hide received audio
+  counts.
 - Reconnect-safe frontend session IDs with per-session ASR stream state and revision cache isolation.
 - AudioWorklet-first browser audio capture with a ScriptProcessor fallback for unsupported browsers.
 - Client diagnostics show which capture backend is active so AudioWorklet and fallback sessions can be compared.
@@ -48,6 +53,8 @@ Recent validation:
 - `python -m compileall tools backend/test_endurance_runner.py`.
 - `.\\backend\\.venv\\Scripts\\python.exe -m unittest discover backend`.
 - `.\\backend\\.venv\\Scripts\\python.exe -m compileall backend\\api backend\\core backend\\models backend\\services backend\\storage`.
+- `.\\backend\\.venv\\Scripts\\python.exe tools\\endurance_preflight.py --output reports\\endurance-preflight-latest.json`.
+- `.\\backend\\.venv\\Scripts\\python.exe tools\\endurance_runner.py --duration-seconds 60 --source silence --output reports\\endurance-60s-language-config.json --max-dropped-chunks 0 --max-queue-depth 8 --min-received-ratio 0.99 --max-subtitle-order-violations 0`.
 - `.\\backend\\.venv\\Scripts\\python.exe tools\\endurance_runner.py --help`.
 - `git diff --check`.
 - Playwright desktop, mobile, and narrow viewport checks for panel overflow, prompt overlap, button text overflow, and 44px touch targets.
