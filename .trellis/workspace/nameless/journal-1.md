@@ -272,3 +272,36 @@ Added a unified interpreter validation suite for preflight, optional endurance, 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 9: Desktop floating subtitle overlay
+
+**Date**: 2026-06-07
+**Task**: Desktop floating subtitle overlay
+**Branch**: `docs/delivery-pr-workflow`
+
+### Summary
+
+Implemented Electron transparent always-on-top subtitle overlay, renderer bridge, control-panel toggle, overlay tests, documentation, and desktop launcher spec updates.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `126b2c7` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

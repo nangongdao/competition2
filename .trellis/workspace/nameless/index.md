@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 8
+- **Total Sessions**: 9
 - **Last Active**: 2026-06-07
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~274 | Active |
+| `journal-1.md` | ~307 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 9 | 2026-06-07 | Desktop floating subtitle overlay | `126b2c7` | `docs/delivery-pr-workflow` |
 | 8 | 2026-06-07 | AI interpreter validation suite | `0a6d110` | `docs/delivery-pr-workflow` |
 | 7 | 2026-06-07 | 同传可靠性验证工具增强 | `b603d39`, `d9b1b13` | `docs/delivery-pr-workflow` |
 | 6 | 2026-06-07 | AI 同声传译语言配置升级 | `b29ccb2`, `74cd991` | `docs/delivery-pr-workflow` |
