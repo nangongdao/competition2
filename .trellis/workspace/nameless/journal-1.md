@@ -72,3 +72,36 @@ Implemented live session diagnostics, reconnect-safe session IDs, per-session AS
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: Endurance runner observability
+
+**Date**: 2026-06-07
+**Task**: Endurance runner observability
+**Branch**: `docs/delivery-pr-workflow`
+
+### Summary
+
+Enhanced endurance runner reports with API/revision counter summaries, final subtitle ordering anomaly tracking, and a subtitle-order threshold; updated docs, backend diagnostics spec, tests, pushed branch, and updated PR #3.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1709723` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
