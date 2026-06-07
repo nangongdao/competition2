@@ -338,3 +338,36 @@ Diagnosed desktop startup failure as an unhealthy occupied backend port, added b
 ### Next Steps
 
 - None - task complete
+
+
+## Session 11: 桌面启动设置与界面语言
+
+**Date**: 2026-06-07
+**Task**: 桌面启动设置与界面语言
+**Branch**: `docs/delivery-pr-workflow`
+
+### Summary
+
+Added Electron desktop settings UI, local secret-safe settings file, launcher env injection, and Chinese/English UI language switching.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `bc7302e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
