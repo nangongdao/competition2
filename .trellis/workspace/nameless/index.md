@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 11
+- **Total Sessions**: 12
 - **Last Active**: 2026-06-07
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~373 | Active |
+| `journal-1.md` | ~406 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 12 | 2026-06-07 | Web-first startup | `f853899` | `docs/delivery-pr-workflow` |
 | 11 | 2026-06-07 | 桌面启动设置与界面语言 | `bc7302e` | `docs/delivery-pr-workflow` |
 | 10 | 2026-06-07 | Desktop startup resource fallback | `c5c735a` | `docs/delivery-pr-workflow` |
 | 9 | 2026-06-07 | Desktop floating subtitle overlay | `126b2c7` | `docs/delivery-pr-workflow` |

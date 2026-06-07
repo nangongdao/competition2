@@ -371,3 +371,36 @@ Added Electron desktop settings UI, local secret-safe settings file, launcher en
 ### Next Steps
 
 - None - task complete
+
+
+## Session 12: Web-first startup
+
+**Date**: 2026-06-07
+**Task**: Web-first startup
+**Branch**: `docs/delivery-pr-workflow`
+
+### Summary
+
+Added a web-first local launcher, browser-accessible local settings API, frontend browser settings fallback, tests, and docs that make Electron optional.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f853899` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
