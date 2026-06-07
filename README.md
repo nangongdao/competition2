@@ -85,14 +85,27 @@ The shortcut starts `start-desktop.ps1` through a hidden PowerShell process and 
 
 ## Reliability Baseline Tool
 
-Before running a 30-60 minute baseline, create a real `.env` from
-`backend/.env.example` and configure Redis, Whisper, and one provider key:
+Before running a 30-60 minute baseline, keep secrets in the local-only
+`backend/.env.local` file. The tracked `backend/.env.example` file is the GitHub
+template; do not put real keys there.
+
+```powershell
+if (!(Test-Path backend/.env.local)) { Copy-Item backend/.env.example backend/.env.local }
+```
+
+Then edit `backend/.env.local` and configure Redis, Whisper, and one provider
+key:
 
 - `REDIS_URL` and `REDIS_PROTOCOL`.
 - `ASR_ENGINE=whisper`, `WHISPER_MODEL`, `WHISPER_DEVICE`, and
   `WHISPER_COMPUTE_TYPE`.
 - `ANTHROPIC_API_KEY` for `NMT_ENGINE=claude`, or `OPENAI_API_KEY` for
   `NMT_ENGINE=openai`.
+
+The backend and endurance preflight load `backend/.env.local` automatically
+from explicit project paths, so the same file works when commands are run from
+the repository root or from the `backend` directory. Real environment variables
+still override file values when both are set.
 
 Run the secret-safe preflight first:
 

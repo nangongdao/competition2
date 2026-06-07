@@ -1,8 +1,11 @@
 .DS_Store
 Thumbs.db
 
+# Local environment secrets. Keep tracked templates such as .env.example.
 .env
 .env.local
+backend/.env
+backend/.env.local
 .venv/
 venv/
 __pycache__/

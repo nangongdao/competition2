@@ -1,9 +1,15 @@
 from pathlib import Path
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-PROJECT_ROOT = Path(__file__).parent.parent
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = BACKEND_ROOT.parent
+ENV_FILE_PATHS = (
+    REPO_ROOT / ".env",
+    BACKEND_ROOT / ".env",
+    BACKEND_ROOT / ".env.local",
+)
 
 
 class Settings(BaseSettings):
@@ -48,9 +54,11 @@ class Settings(BaseSettings):
     audio_ttl_seconds: int = 120
     audio_queue_max_chunks: int = 100
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
+    model_config = SettingsConfigDict(
+        env_file=tuple(str(path) for path in ENV_FILE_PATHS),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
 
 settings = Settings()

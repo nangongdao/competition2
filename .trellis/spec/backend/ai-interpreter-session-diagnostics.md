@@ -353,9 +353,10 @@ browser capture path.
 
 - Trigger: changes to local reliability tooling that checks Redis, Whisper,
   CUDA, or provider key readiness before a 30-60 minute endurance run.
-- Applies to `tools/endurance_preflight.py`, Redis connection setup in
-  `backend/services/context_manager.py`, `backend/storage/redis_client.py`, and
-  tests that validate preflight report blocking behavior.
+- Applies to `backend/core/config.py`, `tools/endurance_preflight.py`, Redis
+  connection setup in `backend/services/context_manager.py`,
+  `backend/storage/redis_client.py`, and tests that validate preflight report
+  blocking behavior.
 - The preflight must not send audio or call provider APIs; it only validates
   readiness and writes a secret-safe JSON report.
 
@@ -376,6 +377,18 @@ settings.redis_url: str
 settings.redis_protocol: int = 2
 ```
 
+Environment settings:
+
+```python
+ENV_FILE_PATHS = (
+    REPO_ROOT / ".env",
+    BACKEND_ROOT / ".env",
+    BACKEND_ROOT / ".env.local",
+)
+settings.anthropic_api_key: str
+settings.openai_api_key: str
+```
+
 Core helpers:
 
 ```python
@@ -393,6 +406,13 @@ def redact_url(url: str) -> str: ...
 - Redis hash initialization that needs multiple fields must use single-field
   `HSET` commands, optionally through a pipeline, because Redis 3.x rejects
   multi-field `HSET`.
+- Backend settings must load dotenv files from explicit project paths, not from
+  the process working directory. The load order is root `.env`, `backend/.env`,
+  then `backend/.env.local`; later files override earlier files, and real
+  environment variables override all dotenv values.
+- Real provider keys belong in ignored local files such as
+  `backend/.env.local`. The tracked `backend/.env.example` file is only a
+  template and must use placeholder values.
 - The preflight report contains:
   - `status`: `ready` or `blocked`
   - `blockers`: plain strings suitable for PR or daily progress notes
@@ -412,6 +432,8 @@ def redact_url(url: str) -> str: ...
 | Redis URL includes credentials | Report only the redacted URL |
 | Provider engine is unsupported | Report `status=blocked` |
 | Required provider key is empty or placeholder | Report `status=blocked` |
+| `backend/.env.local` is missing | Fall back to root `.env`, `backend/.env`, or defaults |
+| Environment variable and dotenv value both exist | Use the real environment variable |
 | `ASR_ENGINE` is not `whisper` | Report `status=blocked` |
 | `faster-whisper` is missing | Report `status=blocked` |
 | `WHISPER_DEVICE=cuda` but CUDA is unavailable | Report `status=blocked` |
@@ -421,14 +443,17 @@ def redact_url(url: str) -> str: ...
 ### 5. Good/Base/Bad Cases
 
 - Good: Preflight passes with Redis reachable, provider key configured,
-  Whisper installed, and the configured device available; the operator then
-  starts the backend and runs `tools/endurance_runner.py` for 30-60 minutes.
+  Whisper installed, and the configured device available from
+  `backend/.env.local`; the operator then starts the backend and runs
+  `tools/endurance_runner.py` for 30-60 minutes.
 - Base: Preflight writes a blocked report on a developer machine because a
   provider key is missing; the report is safe to commit because it contains no
   secret values.
 - Bad: A long endurance run is started without preflight, fails after backend
   startup because Redis 3 rejects `HELLO` or because the provider key is a
   placeholder, and no actionable report is produced.
+- Bad: Settings only read `.env` from the current working directory, so the
+  desktop launcher and root-level tools silently use different provider keys.
 
 ### 6. Tests Required
 
@@ -437,6 +462,9 @@ def redact_url(url: str) -> str: ...
   CUDA configuration is impossible, Redis fails, or Whisper is not configured.
 - Unit test that `build_report()` returns `ready` when Redis, provider, and
   Whisper checks are valid.
+- Unit tests that settings load root `.env`, `backend/.env`, and
+  `backend/.env.local` in order, ignore unknown dotenv keys, and still let real
+  environment variables override file values.
 - Redis compatibility should be manually validated against Redis 3.x when the
   local environment exposes it: initialize `ContextManager`, create a session,
   reserve a segment index, and clean up the test key.
@@ -453,6 +481,15 @@ await self._redis.hset(meta_key, mapping={"segment_count": "0"})
 This can negotiate RESP3 against Redis 3.x and can also emit a multi-field
 `HSET` shape that Redis 3.x rejects.
 
+```python
+class Settings(BaseSettings):
+    class Config:
+        env_file = ".env"
+```
+
+This depends on the command working directory and can make root-level tools and
+the backend launcher read different secret files.
+
 #### Correct
 
 ```python
@@ -468,6 +505,18 @@ for field, value in values.items():
     pipeline.hset(meta_key, field, value)
 await pipeline.execute()
 ```
+
+```python
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=tuple(str(path) for path in ENV_FILE_PATHS),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+```
+
+This makes local secret loading deterministic while preserving normal
+environment-variable overrides.
 
 The connection protocol is explicit, and hash initialization remains compatible
 with both Redis 3.x and newer Redis versions.
