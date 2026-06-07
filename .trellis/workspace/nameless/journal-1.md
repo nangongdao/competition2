@@ -305,3 +305,36 @@ Implemented Electron transparent always-on-top subtitle overlay, renderer bridge
 ### Next Steps
 
 - None - task complete
+
+
+## Session 10: Desktop startup resource fallback
+
+**Date**: 2026-06-07
+**Task**: Desktop startup resource fallback
+**Branch**: `docs/delivery-pr-workflow`
+
+### Summary
+
+Diagnosed desktop startup failure as an unhealthy occupied backend port, added backend port fallback with runtime WebSocket URL injection, defaulted local startup to low-resource Whisper settings, and validated launcher/frontend/backend tests.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c5c735a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
