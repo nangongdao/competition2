@@ -205,3 +205,37 @@ Handled empty OpenAI-compatible streaming chunks, added NMTService regression te
 ### Next Steps
 
 - None - task complete
+
+
+## Session 7: 同传可靠性验证工具增强
+
+**Date**: 2026-06-07
+**Task**: 同传可靠性验证工具增强
+**Branch**: `docs/delivery-pr-workflow`
+
+### Summary
+
+新增 endurance runner 进程内存采样与增长阈值，新增字幕导出产物验证工具，并同步 README、ROADMAP、Trellis diagnostics spec 与任务记录。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b603d39` | (see git log) |
+| `d9b1b13` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
