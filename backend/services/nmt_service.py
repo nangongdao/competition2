@@ -144,7 +144,11 @@ Translation:""",
             )
 
             async for chunk in stream:
-                token = chunk.choices[0].delta.content
+                if not chunk.choices:
+                    continue
+
+                delta = getattr(chunk.choices[0], "delta", None)
+                token = getattr(delta, "content", None)
                 if token:
                     yield token
 

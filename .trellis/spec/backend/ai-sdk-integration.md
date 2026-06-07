@@ -223,6 +223,34 @@ async function classifyOrder(orderData: OrderData) {
 | Invalid API key | Missing/wrong credentials | Check environment variables |
 | Schema validation failed | AI output doesn't match schema | Adjust schema or prompt |
 
+### OpenAI-Compatible Streaming Chunks
+
+Some OpenAI-compatible providers emit metadata chunks with an empty `choices`
+list, or choice deltas without `content`. Streaming consumers must treat those
+chunks as non-content and continue reading the stream.
+
+```python
+# Wrong: provider metadata chunks can have no choices.
+token = chunk.choices[0].delta.content
+
+# Correct: skip non-content chunks and only yield real tokens.
+if not chunk.choices:
+    continue
+
+delta = getattr(chunk.choices[0], "delta", None)
+token = getattr(delta, "content", None)
+if token:
+    yield token
+```
+
+Required tests for streaming integrations:
+
+| Case | Assertion |
+|------|-----------|
+| Empty `choices` chunk | The stream continues without raising. |
+| Missing or empty `delta.content` | No empty token is emitted. |
+| Content chunk after metadata | Content is yielded and normal finalization still happens. |
+
 ## 6. Prompt Engineering Best Practices
 
 ### Use XML Structure for Complex Prompts
