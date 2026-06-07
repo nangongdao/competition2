@@ -239,3 +239,36 @@ Handled empty OpenAI-compatible streaming chunks, added NMTService regression te
 ### Next Steps
 
 - None - task complete
+
+
+## Session 8: AI interpreter validation suite
+
+**Date**: 2026-06-07
+**Task**: AI interpreter validation suite
+**Branch**: `docs/delivery-pr-workflow`
+
+### Summary
+
+Added a unified interpreter validation suite for preflight, optional endurance, and subtitle artifact checks; made artifact validation tolerate UTF-8 BOM; updated tests and docs.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0a6d110` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
