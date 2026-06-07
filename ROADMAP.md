@@ -27,6 +27,7 @@ Implemented capabilities now include:
 - Endurance runner summaries now expose API-call counters, revision counters, and final-subtitle ordering anomalies for long-run comparison.
 - Endurance runner reports can optionally sample runner/backend process RSS memory, summarize start/end/peak/growth values, and fail on memory-growth thresholds.
 - Subtitle artifact validation tooling now checks TXT/SRT/VTT/Markdown exports for empty output, cue counts, timestamp overlaps, long gaps, revision markers, transcript counts, and Markdown timeline readability.
+- Unified interpreter validation suite now coordinates preflight, optional endurance runs, and optional subtitle artifact checks into one report for real-session acceptance evidence.
 - Electron desktop launcher that starts the built frontend, FastAPI backend, and a native desktop window from a double-click entry.
 - Electron single-instance, tray restore, minimize-to-tray, and startup-log menu behavior for a more software-like local desktop experience.
 - Windows desktop shortcut installer scripts for desktop launching.
@@ -57,7 +58,7 @@ Most recent recorded validation:
 
 Known gaps after the implemented slice:
 
-- The project now has a local endurance runner with queue-depth, received-ratio, subtitle-order, and optional memory-growth thresholds, but still needs a true 30-60 minute live run with Redis, Whisper, provider API keys, and monitored backend PIDs.
+- The project now has a local endurance runner with queue-depth, received-ratio, subtitle-order, optional memory-growth thresholds, and a combined validation-suite entry point, but still needs a true 30-60 minute live run with Redis, Whisper, provider API keys, and monitored backend PIDs.
 - The project now has a secret-safe endurance preflight. The 2026-06-06 local preflight reached Redis and detected Whisper readiness, but the true 30-60 minute baseline is still blocked until a real `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` is configured.
 - Export coverage now includes TXT transcript, SRT subtitles, VTT subtitles, Markdown learning notes, diagnostics downloads, unit tests for the formatter outputs, and an artifact validator; the exported files still need real-session timing and readability validation with captured session content.
 - Browser audio capture now defaults to `AudioWorklet`, diagnostics show the active backend, and unit tests cover main-path startup, fallback, and failed-capture cleanup; the path still needs real-session comparison against the ScriptProcessor fallback for chunk stability, dropped chunks, and latency.
@@ -67,8 +68,8 @@ Known gaps after the implemented slice:
 
 The next roadmap slice should make the existing V2 workflow measurable and dependable before expanding the product surface.
 
-1. **Reliability and observability baseline**: run `tools/endurance_preflight.py` first, then run 30-60 minute live sessions with `tools/endurance_runner.py` after Redis, Whisper, and provider keys are ready. Record client-to-backend received ratio, audio queue depth, queue wait latency, queue drops, reconnects, subtitle ordering, memory growth, ASR latency, translation latency, revision latency, revision sources, and API-call counts.
-2. **Export validation and artifact refinement**: validate SRT/VTT timing, revised-segment markers, Markdown note readability, and unchanged TXT/diagnostics behavior in real sessions with `tools/subtitle_artifact_validator.py`.
+1. **Reliability and observability baseline**: run `tools/interpreter_validation_suite.py` first, then run 30-60 minute live sessions through the suite or `tools/endurance_runner.py` after Redis, Whisper, and provider keys are ready. Record client-to-backend received ratio, audio queue depth, queue wait latency, queue drops, reconnects, subtitle ordering, memory growth, ASR latency, translation latency, revision latency, revision sources, and API-call counts.
+2. **Export validation and artifact refinement**: validate SRT/VTT timing, revised-segment markers, Markdown note readability, and unchanged TXT/diagnostics behavior in real sessions with `tools/interpreter_validation_suite.py --artifact ...` or `tools/subtitle_artifact_validator.py`.
 3. **Browser audio-capture validation**: validate the AudioWorklet capture path in real sessions and compare the recorded capture backend, chunk stability, dropped chunks, and latency against the ScriptProcessor fallback.
 4. **Chinese TTS playback**: validate the local Web Speech TTS slice in real sessions, including queue behavior, revised-segment handling, browser/Electron voice availability, and whether provider-backed synthesis is needed for consistent output.
 5. **Desktop/system-audio capture**: keep the Electron desktop launcher for demos, but defer full desktop/system-audio capture until the browser workflow is stable. Evaluate Electron/Tauri using real requirements for system-audio capture, packaging size, memory usage, and cross-platform support.

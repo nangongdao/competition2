@@ -94,6 +94,27 @@ class SubtitleArtifactValidatorTests(unittest.TestCase):
         self.assertEqual(summary["source_line_count"], 1)
         self.assertEqual(summary["translation_line_count"], 1)
 
+    def test_validate_markdown_notes_ignores_utf8_bom(self) -> None:
+        report = validate_artifact_text(
+            "\ufeff" + "\n".join([
+                "# AI Interpreter Learning Notes",
+                "",
+                "## Timeline",
+                "",
+                "### 1. 12:00:00",
+                "",
+                "- Source: Hello",
+                "- Translation: Ni hao",
+            ]),
+            kind="markdown",
+        )
+
+        self.assertTrue(report["is_usable"])
+        summary = report["summary"]
+        self.assertIsInstance(summary, dict)
+        self.assertTrue(summary["has_title"])
+        self.assertEqual(summary["timeline_entry_count"], 1)
+
     def test_validate_plain_transcript_counts_entries(self) -> None:
         report = validate_artifact_text(
             "\n".join([

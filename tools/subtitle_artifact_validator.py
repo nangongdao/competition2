@@ -42,7 +42,7 @@ def validate_artifact(
     if not path.exists():
         raise ArtifactValidationError(f"Artifact does not exist: {path}")
     detected_kind = normalize_kind(kind) if kind else detect_kind(path)
-    text = path.read_text(encoding="utf-8")
+    text = path.read_text(encoding="utf-8-sig")
     return validate_artifact_text(
         text,
         kind=detected_kind,
@@ -59,6 +59,7 @@ def validate_artifact_text(
     long_gap_ms: int = DEFAULT_LONG_GAP_MS,
 ) -> dict[str, object]:
     normalized_kind = normalize_kind(kind)
+    text = strip_utf8_bom(text)
     if long_gap_ms < 0:
         raise ArtifactValidationError("Long gap threshold cannot be negative.")
 
@@ -247,6 +248,12 @@ def is_effectively_empty(text: str, kind: str) -> bool:
     if kind == "vtt" and stripped == "WEBVTT":
         return True
     return False
+
+
+def strip_utf8_bom(text: str) -> str:
+    if text.startswith("\ufeff"):
+        return text[1:]
+    return text
 
 
 def detect_kind(path: Path) -> str:

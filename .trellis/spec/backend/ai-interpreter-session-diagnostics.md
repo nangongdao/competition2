@@ -430,6 +430,8 @@ def build_validation_report(paths: list[Path], *, kind: str | None, long_gap_ms:
 
 - Supported artifact kinds are `txt`, `srt`, `vtt`, and `markdown`; kind may be
   inferred from file extension or overridden for all paths.
+- Artifact text must tolerate a leading UTF-8 BOM so Windows-authored TXT or
+  Markdown files are not misclassified as missing their first entry or title.
 - Timed subtitles must report cue count, invalid timestamp count, overlap count,
   gap count, long-gap count, maximum gap, duration, and empty cue count.
 - Plain transcript validation must report numbered entry count plus source and
@@ -448,6 +450,7 @@ def build_validation_report(paths: list[Path], *, kind: str | None, long_gap_ms:
 | --- | --- |
 | Artifact path is missing | Raise a validator error and exit non-zero |
 | Extension/kind is unsupported | Raise a validator error and exit non-zero |
+| Artifact starts with a UTF-8 BOM | Strip the BOM before format-specific validation |
 | VTT file only contains `WEBVTT` | Mark the artifact empty and unusable |
 | SRT/VTT cue timestamps are invalid | Mark timed artifact unusable |
 | SRT/VTT cues overlap | Mark timed artifact unusable |
@@ -458,8 +461,8 @@ def build_validation_report(paths: list[Path], *, kind: str | None, long_gap_ms:
 ### 5. Tests Required
 
 - Unit tests for SRT/VTT cue parsing, overlap/gap summaries, empty VTT handling,
-  Markdown readability metadata, plain transcript counts, extension detection,
-  report aggregation, and unsupported extensions.
+  UTF-8 BOM handling, Markdown readability metadata, plain transcript counts,
+  extension detection, report aggregation, and unsupported extensions.
 
 ## Scenario: Endurance Preflight and Redis Compatibility
 
@@ -634,3 +637,126 @@ environment-variable overrides.
 
 The connection protocol is explicit, and hash initialization remains compatible
 with both Redis 3.x and newer Redis versions.
+
+## Scenario: Interpreter Validation Suite
+
+### 1. Scope / Trigger
+
+- Trigger: changes to local validation orchestration that combines preflight,
+  endurance, or subtitle artifact checks.
+- Applies to `tools/interpreter_validation_suite.py` and tests that validate
+  suite report aggregation or child command construction.
+- The suite is an operator-facing wrapper only. It must not replace the
+  underlying validation tools, change backend WebSocket schemas, or change
+  frontend export formats.
+
+### 2. Signatures
+
+CLI:
+
+```bash
+python tools/interpreter_validation_suite.py \
+  --run-endurance \
+  --duration-seconds 1800 \
+  --monitor-self \
+  --monitor-pid backend=<uvicorn_pid> \
+  --max-memory-growth-mb 150 \
+  --max-dropped-chunks 0 \
+  --max-queue-depth 8 \
+  --min-received-ratio 0.99 \
+  --max-subtitle-order-violations 0 \
+  --artifact exports/session.txt \
+  --artifact exports/session.srt \
+  --artifact exports/session.vtt \
+  --artifact exports/session.md \
+  --output reports/interpreter-validation-30m.json
+```
+
+Core helpers:
+
+```python
+def run_suite(config: SuiteConfig, *, command_runner=run_command) -> tuple[int, dict[str, object]]: ...
+def build_suite_report(steps: list[dict[str, object]]) -> dict[str, object]: ...
+def determine_overall_status(steps: list[dict[str, object]]) -> str: ...
+def build_next_actions(steps: list[dict[str, object]], status: str) -> list[str]: ...
+```
+
+### 3. Contracts
+
+- By default the suite runs `tools/endurance_preflight.py` and skips endurance
+  until `--run-endurance` is provided.
+- Endurance is skipped when preflight is blocked or failed. Operators may use
+  `--skip-preflight` when intentionally running a local smoke test without the
+  readiness gate.
+- Subtitle artifact validation runs only when one or more `--artifact` paths
+  are provided.
+- Before each child step runs, the suite removes that child report path so a
+  failed child process cannot be summarized from stale JSON.
+- The combined report contains:
+  - top-level `generated_at`
+  - top-level `status`: `passed`, `blocked`, `failed`, or `incomplete`
+  - one entry per step with name, status, exit code, safe command metadata,
+    child report path, stdout/stderr excerpts, and a small summary
+  - `next_actions` with actionable follow-up items
+- The suite exits `0` only when every executed child step passes. It exits
+  non-zero when a child step fails, preflight blocks the run, or no step was
+  executed.
+- Provider key values and Redis credentials must never be written to the suite
+  report. The suite may include provider key names and boolean key presence from
+  the existing secret-safe preflight report.
+
+### 4. Validation & Error Matrix
+
+| Condition | Behavior |
+| --- | --- |
+| Preflight passes and no other steps are requested | Write a passed suite report with endurance/artifacts marked skipped |
+| Preflight returns a blocked child report | Mark preflight blocked, skip endurance, and exit non-zero |
+| `--skip-preflight --run-endurance` is used | Run endurance directly |
+| Endurance child exits non-zero | Mark endurance failed and exit non-zero |
+| Artifact validator exits non-zero | Mark artifacts failed and include unusable paths when a child report exists |
+| No preflight, endurance, or artifacts are executed | Mark the suite incomplete and exit non-zero |
+| Child process fails before writing a JSON report | Mark the step failed and report `report_available=false` |
+
+### 5. Good/Base/Bad Cases
+
+- Good: A real operator runs preflight, a 30-60 minute endurance baseline, and
+  exported TXT/SRT/VTT/Markdown artifact checks through one suite command; the
+  combined report shows every executed step passed and keeps child report paths.
+- Base: A developer runs the suite with no extra flags; preflight passes, while
+  endurance and artifacts are explicitly marked skipped with next actions.
+- Bad: The suite treats an old child JSON report as current evidence after a
+  child command fails before writing a new report.
+- Bad: The suite accepts provider keys as CLI arguments or writes secret values
+  into the combined report.
+
+### 6. Tests Required
+
+- Unit tests for preflight-only success.
+- Unit tests for blocked preflight skipping endurance.
+- Unit tests for artifact-only success and unusable artifact failure.
+- Unit tests that stale child reports are removed before child command
+  execution.
+- Unit tests for CLI argument construction of endurance thresholds and memory
+  monitor flags.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```python
+child_report = load_json_report(config.endurance_output_path)
+result = command_runner(command)
+```
+
+This can summarize stale endurance evidence when the new child command fails
+before writing a report.
+
+#### Correct
+
+```python
+remove_existing_report(config.endurance_output_path)
+result = command_runner(command)
+child_report = load_json_report(config.endurance_output_path)
+```
+
+Each suite run summarizes only child reports produced by the current execution.

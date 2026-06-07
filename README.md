@@ -30,6 +30,8 @@ Implemented product capabilities now include:
   fail on configured memory-growth thresholds.
 - Subtitle artifact validator for checking exported TXT/SRT/VTT/Markdown files
   from real sessions.
+- Unified interpreter validation suite that coordinates preflight, optional
+  endurance runs, and optional subtitle artifact checks into one audit report.
 - Secret-safe endurance preflight for checking Redis, Whisper, CUDA, and provider key readiness before long runs.
 - Electron desktop launcher that starts the built frontend, FastAPI backend, and a native desktop window from a double-click entry.
 - Electron single-instance, tray restore, minimize-to-tray, and startup-log menu behavior for a more software-like local desktop experience.
@@ -58,6 +60,7 @@ Recent validation:
 - `.\\backend\\.venv\\Scripts\\python.exe -m unittest discover backend`.
 - `.\\backend\\.venv\\Scripts\\python.exe -m compileall backend\\api backend\\core backend\\models backend\\services backend\\storage`.
 - `.\\backend\\.venv\\Scripts\\python.exe tools\\endurance_preflight.py --output reports\\endurance-preflight-latest.json`.
+- `.\\backend\\.venv\\Scripts\\python.exe tools\\interpreter_validation_suite.py --output reports\\interpreter-validation-latest.json`.
 - `.\\backend\\.venv\\Scripts\\python.exe tools\\endurance_runner.py --duration-seconds 60 --source silence --output reports\\endurance-60s-language-config.json --max-dropped-chunks 0 --max-queue-depth 8 --min-received-ratio 0.99 --max-subtitle-order-violations 0`.
 - `.\\backend\\.venv\\Scripts\\python.exe tools\\endurance_runner.py --help`.
 - `git diff --check`.
@@ -117,6 +120,30 @@ The backend and endurance preflight load `backend/.env.local` automatically
 from explicit project paths, so the same file works when commands are run from
 the repository root or from the `backend` directory. Real environment variables
 still override file values when both are set.
+
+For repeatable project-level validation, run the interpreter validation suite.
+By default it runs the secret-safe preflight and writes a combined report:
+
+```bash
+python tools/interpreter_validation_suite.py --output reports/interpreter-validation-latest.json
+```
+
+When the backend is running and preflight is ready, include the endurance run
+and thresholds in the same report:
+
+```bash
+python tools/interpreter_validation_suite.py --run-endurance --duration-seconds 1800 --monitor-self --monitor-pid backend=<uvicorn_pid> --max-memory-growth-mb 150 --max-dropped-chunks 0 --max-queue-depth 8 --min-received-ratio 0.99 --max-subtitle-order-violations 0 --output reports/interpreter-validation-30m.json
+```
+
+After exporting session artifacts, pass them to the same suite so the final
+report includes subtitle usability evidence:
+
+```bash
+python tools/interpreter_validation_suite.py --artifact exports/session.txt --artifact exports/session.srt --artifact exports/session.vtt --artifact exports/session.md --output reports/interpreter-validation-artifacts.json
+```
+
+The suite writes child reports for preflight, endurance, and artifact validation
+under `reports/` and exits non-zero when an executed step is blocked or failed.
 
 Run the secret-safe preflight first:
 
