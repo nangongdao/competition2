@@ -1,0 +1,14 @@
+{
+  "uiLanguage": "zh-CN",
+  "translation": {
+    "engine": "openai",
+    "model": "gpt-4o-mini",
+    "openaiBaseUrl": "https://api.openai.com/v1",
+    "openaiApiKey": "",
+    "anthropicApiKey": ""
+  },
+  "runtime": {
+    "asrProfile": "light",
+    "sourceLanguage": "en"
+  }
+}

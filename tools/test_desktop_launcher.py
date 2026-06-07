@@ -93,6 +93,96 @@ class DesktopLauncherTests(unittest.TestCase):
         self.assertNotIn("WHISPER_DEVICE", env)
         self.assertNotIn("WHISPER_COMPUTE_TYPE", env)
 
+    def test_build_backend_environment_applies_local_desktop_settings(self) -> None:
+        settings = desktop_launcher.DesktopSettings(
+            nmt_engine="openai",
+            nmt_model="gpt-4o-mini",
+            openai_base_url="https://example.test/v1",
+            openai_api_key="local-openai-key",
+            anthropic_api_key="local-anthropic-key",
+            source_language="ja",
+        )
+
+        with (
+            patch.dict(desktop_launcher.os.environ, {}, clear=True),
+            patch.object(desktop_launcher, "write_log"),
+        ):
+            env = desktop_launcher.build_backend_environment(8123, "env", settings)
+
+        self.assertEqual(env["NMT_ENGINE"], "openai")
+        self.assertEqual(env["NMT_MODEL"], "gpt-4o-mini")
+        self.assertEqual(env["OPENAI_BASE_URL"], "https://example.test/v1")
+        self.assertEqual(env["OPENAI_API_KEY"], "local-openai-key")
+        self.assertEqual(env["ANTHROPIC_API_KEY"], "local-anthropic-key")
+        self.assertEqual(env["SOURCE_LANGUAGE"], "ja")
+
+    def test_build_backend_environment_preserves_process_env_over_local_settings(self) -> None:
+        settings = desktop_launcher.DesktopSettings(
+            nmt_engine="openai",
+            nmt_model="local-model",
+            source_language="fr",
+        )
+
+        with (
+            patch.dict(
+                desktop_launcher.os.environ,
+                {
+                    "NMT_MODEL": "env-model",
+                    "SOURCE_LANGUAGE": "en",
+                },
+                clear=True,
+            ),
+            patch.object(desktop_launcher, "write_log"),
+        ):
+            env = desktop_launcher.build_backend_environment(8123, "env", settings)
+
+        self.assertEqual(env["NMT_ENGINE"], "openai")
+        self.assertEqual(env["NMT_MODEL"], "env-model")
+        self.assertEqual(env["SOURCE_LANGUAGE"], "en")
+
+    def test_resolve_desktop_asr_profile_uses_local_settings_when_no_override(self) -> None:
+        settings = desktop_launcher.DesktopSettings(asr_profile="gpu")
+
+        with patch.dict(desktop_launcher.os.environ, {}, clear=True):
+            profile = desktop_launcher.resolve_desktop_asr_profile(None, settings)
+
+        self.assertEqual(profile, "gpu")
+
+    def test_resolve_desktop_asr_profile_prefers_cli_then_env(self) -> None:
+        settings = desktop_launcher.DesktopSettings(asr_profile="gpu")
+
+        with patch.dict(
+            desktop_launcher.os.environ,
+            {desktop_launcher.DESKTOP_ASR_PROFILE_ENV: "cpu"},
+            clear=True,
+        ):
+            env_profile = desktop_launcher.resolve_desktop_asr_profile(None, settings)
+            cli_profile = desktop_launcher.resolve_desktop_asr_profile("env", settings)
+
+        self.assertEqual(env_profile, "cpu")
+        self.assertEqual(cli_profile, "env")
+
+    def test_normalize_desktop_settings_rejects_unsupported_values(self) -> None:
+        settings = desktop_launcher.normalize_desktop_settings({
+            "uiLanguage": "zh-CN",
+            "translation": {
+                "engine": "prompt-injection",
+                "model": " model ",
+                "openaiBaseUrl": " https://example.test/v1 ",
+            },
+            "runtime": {
+                "asrProfile": "too-large",
+                "sourceLanguage": "ja",
+            },
+        })
+
+        self.assertEqual(settings.ui_language, "zh-CN")
+        self.assertEqual(settings.nmt_engine, "")
+        self.assertEqual(settings.nmt_model, "model")
+        self.assertEqual(settings.openai_base_url, "https://example.test/v1")
+        self.assertEqual(settings.asr_profile, "")
+        self.assertEqual(settings.source_language, "ja")
+
     def test_create_desktop_url_injects_backend_ws_query_param(self) -> None:
         url = desktop_launcher.append_query_param(
             "http://127.0.0.1:4500/?surface=main",

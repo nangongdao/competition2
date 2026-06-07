@@ -1,4 +1,10 @@
-import type { SubtitleEntry, SubtitleMode } from '../types'
+import type {
+  DesktopSettingsSaveResult,
+  DesktopSettingsSnapshot,
+  DesktopSettingsUpdate,
+  SubtitleEntry,
+  SubtitleMode,
+} from '../types'
 
 
 export interface DesktopOverlaySnapshot {
@@ -20,6 +26,8 @@ export interface DesktopBridge {
   sendSubtitleSnapshot: (snapshot: DesktopOverlaySnapshot) => void
   onOverlayStateChange: (callback: (state: DesktopOverlayState) => void) => () => void
   onSubtitleSnapshot: (callback: (snapshot: DesktopOverlaySnapshot) => void) => () => void
+  getSettings?: () => Promise<DesktopSettingsSnapshot>
+  saveSettings?: (update: DesktopSettingsUpdate) => Promise<DesktopSettingsSaveResult>
 }
 
 
@@ -98,4 +106,3 @@ function hasRenderableSubtitleText(entry: SubtitleEntry): boolean {
 function cloneSubtitleEntry(entry: SubtitleEntry): SubtitleEntry {
   return { ...entry }
 }
-

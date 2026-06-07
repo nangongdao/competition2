@@ -13,6 +13,7 @@ import contextlib
 from dataclasses import dataclass
 import http.client
 import http.server
+import json
 import os
 from pathlib import Path
 import shutil
@@ -29,6 +30,8 @@ BACKEND_DIR = PROJECT_ROOT / "backend"
 FRONTEND_DIR = PROJECT_ROOT / "frontend"
 DIST_DIR = FRONTEND_DIR / "dist"
 ELECTRON_MAIN = FRONTEND_DIR / "electron" / "main.cjs"
+CONFIG_DIR = PROJECT_ROOT / "config"
+DESKTOP_SETTINGS_LOCAL_PATH = CONFIG_DIR / "desktop-settings.local.json"
 LOG_DIR = PROJECT_ROOT / "logs"
 LOG_FILE = LOG_DIR / "desktop-launcher.log"
 
@@ -41,6 +44,9 @@ BACKEND_START_TIMEOUT_SECONDS = 35
 DEFAULT_DESKTOP_ASR_PROFILE = "light"
 DESKTOP_ASR_PROFILE_ENV = "AI_INTERPRETER_DESKTOP_ASR_PROFILE"
 WS_URL_QUERY_PARAM = "wsUrl"
+SUPPORTED_UI_LANGUAGES = {"zh-CN", "en-US"}
+SUPPORTED_TRANSLATION_ENGINES = {"claude", "openai"}
+SUPPORTED_SOURCE_LANGUAGES = {"auto", "en", "ja", "ko", "es", "fr", "de"}
 
 CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
@@ -54,6 +60,18 @@ class DesktopAsrProfile:
     model: str
     device: str
     compute_type: str
+
+
+@dataclass(frozen=True)
+class DesktopSettings:
+    ui_language: str = ""
+    nmt_engine: str = ""
+    nmt_model: str = ""
+    openai_base_url: str = ""
+    openai_api_key: str = ""
+    anthropic_api_key: str = ""
+    asr_profile: str = ""
+    source_language: str = ""
 
 
 DESKTOP_ASR_PROFILES = {
@@ -73,6 +91,77 @@ DESKTOP_ASR_PROFILES = {
         compute_type="float16",
     ),
 }
+
+
+def load_desktop_settings(path: Path = DESKTOP_SETTINGS_LOCAL_PATH) -> DesktopSettings:
+    if not path.exists():
+        return DesktopSettings()
+
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            raw_settings = json.load(handle)
+    except (OSError, json.JSONDecodeError) as error:
+        write_log(f"Ignoring desktop settings file {path}: {error}")
+        return DesktopSettings()
+
+    if not isinstance(raw_settings, dict):
+        write_log(f"Ignoring desktop settings file {path}: root value must be an object")
+        return DesktopSettings()
+
+    settings = normalize_desktop_settings(raw_settings)
+    write_log(f"Loaded desktop settings from {path}")
+    return settings
+
+
+def normalize_desktop_settings(raw_settings: dict[object, object]) -> DesktopSettings:
+    translation = get_object_section(raw_settings, "translation")
+    runtime = get_object_section(raw_settings, "runtime")
+
+    return DesktopSettings(
+        ui_language=clean_allowed_string(
+            get_string_value(raw_settings, "uiLanguage"),
+            SUPPORTED_UI_LANGUAGES,
+        ),
+        nmt_engine=clean_allowed_string(
+            get_string_value(translation, "engine"),
+            SUPPORTED_TRANSLATION_ENGINES,
+        ),
+        nmt_model=get_string_value(translation, "model"),
+        openai_base_url=get_string_value(translation, "openaiBaseUrl"),
+        openai_api_key=get_string_value(translation, "openaiApiKey"),
+        anthropic_api_key=get_string_value(translation, "anthropicApiKey"),
+        asr_profile=clean_allowed_string(
+            get_string_value(runtime, "asrProfile"),
+            {"env", *DESKTOP_ASR_PROFILES.keys()},
+        ),
+        source_language=clean_allowed_string(
+            get_string_value(runtime, "sourceLanguage"),
+            SUPPORTED_SOURCE_LANGUAGES,
+        ),
+    )
+
+
+def get_object_section(
+    raw_settings: dict[object, object],
+    name: str,
+) -> dict[object, object]:
+    value = raw_settings.get(name)
+    if isinstance(value, dict):
+        return value
+    return {}
+
+
+def get_string_value(raw_settings: dict[object, object], name: str) -> str:
+    value = raw_settings.get(name)
+    if isinstance(value, str):
+        return value.strip()
+    return ""
+
+
+def clean_allowed_string(value: str, allowed_values: set[str]) -> str:
+    if value in allowed_values:
+        return value
+    return ""
 
 
 class SplashWindow:
@@ -216,11 +305,45 @@ def resolve_backend_port(requested_port: int) -> int:
     return selected_port
 
 
-def build_backend_environment(port: int, asr_profile: str) -> dict[str, str]:
+def build_backend_environment(
+    port: int,
+    asr_profile: str,
+    desktop_settings: DesktopSettings | None = None,
+) -> dict[str, str]:
     env = os.environ.copy()
     env["PORT"] = str(port)
+    apply_desktop_settings_to_env(env, desktop_settings or DesktopSettings())
     apply_desktop_asr_profile(env, asr_profile)
     return env
+
+
+def apply_desktop_settings_to_env(
+    env: dict[str, str],
+    desktop_settings: DesktopSettings,
+) -> None:
+    set_default_env_value(env, "NMT_ENGINE", desktop_settings.nmt_engine)
+    set_default_env_value(env, "NMT_MODEL", desktop_settings.nmt_model)
+    set_default_env_value(env, "OPENAI_BASE_URL", desktop_settings.openai_base_url)
+    set_default_env_value(env, "OPENAI_API_KEY", desktop_settings.openai_api_key)
+    set_default_env_value(env, "ANTHROPIC_API_KEY", desktop_settings.anthropic_api_key)
+    set_default_env_value(env, "SOURCE_LANGUAGE", desktop_settings.source_language)
+
+
+def resolve_desktop_asr_profile(
+    cli_profile: str | None,
+    desktop_settings: DesktopSettings,
+) -> str:
+    if cli_profile and cli_profile.strip():
+        return cli_profile.strip()
+
+    env_profile = os.environ.get(DESKTOP_ASR_PROFILE_ENV, "").strip()
+    if env_profile:
+        return env_profile
+
+    if desktop_settings.asr_profile:
+        return desktop_settings.asr_profile
+
+    return DEFAULT_DESKTOP_ASR_PROFILE
 
 
 def apply_desktop_asr_profile(env: dict[str, str], asr_profile: str) -> None:
@@ -251,6 +374,8 @@ def apply_desktop_asr_profile(env: dict[str, str], asr_profile: str) -> None:
 
 
 def set_default_env_value(env: dict[str, str], key: str, value: str) -> None:
+    if not value.strip():
+        return
     if env.get(key, "").strip():
         return
     env[key] = value
@@ -384,7 +509,11 @@ def stream_process_output(process: subprocess.Popen[str], prefix: str) -> None:
         write_log(f"{prefix}: {line.rstrip()}")
 
 
-def start_backend(port: int, asr_profile: str) -> subprocess.Popen[str] | None:
+def start_backend(
+    port: int,
+    asr_profile: str,
+    desktop_settings: DesktopSettings | None = None,
+) -> subprocess.Popen[str] | None:
     if is_backend_healthy(port):
         write_log(f"Backend already healthy on {HOST}:{port}")
         return None
@@ -400,7 +529,7 @@ def start_backend(port: int, asr_profile: str) -> subprocess.Popen[str] | None:
         "--port",
         str(port),
     ]
-    env = build_backend_environment(port, asr_profile)
+    env = build_backend_environment(port, asr_profile, desktop_settings)
 
     write_log(f"Starting backend: {' '.join(command)}")
     process = subprocess.Popen(
@@ -552,14 +681,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--asr-profile",
-        default=os.environ.get(
-            DESKTOP_ASR_PROFILE_ENV,
-            DEFAULT_DESKTOP_ASR_PROFILE,
-        ),
+        default=None,
         help=(
             "Desktop ASR resource profile: light/cpu uses small Whisper on CPU "
             "int8, gpu uses large-v3 on CUDA float16, env preserves dotenv "
-            "ASR settings."
+            "ASR settings. Defaults to AI_INTERPRETER_DESKTOP_ASR_PROFILE, "
+            "then local desktop settings, then light."
         ),
     )
     parser.add_argument(
@@ -573,6 +700,8 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     reset_log()
+    desktop_settings = load_desktop_settings()
+    asr_profile = resolve_desktop_asr_profile(args.asr_profile, desktop_settings)
 
     splash = SplashWindow(enabled=not args.no_splash)
     backend_process: subprocess.Popen[str] | None = None
@@ -587,7 +716,7 @@ def main() -> int:
 
         splash.set_status("Starting backend")
         backend_port = resolve_backend_port(args.backend_port)
-        backend_process = start_backend(backend_port, args.asr_profile)
+        backend_process = start_backend(backend_port, asr_profile, desktop_settings)
 
         splash.set_status("Opening app window")
         desktop_process = launch_desktop_window(

@@ -5,10 +5,22 @@ import {
   getDesktopBridge,
   type DesktopOverlayState,
 } from './desktop/overlay'
+import {
+  createUnavailableDesktopSettings,
+  loadDesktopSettings,
+  saveDesktopSettings,
+} from './desktop/settings'
+import { getUiText } from './i18n'
 import { SubtitleRenderer } from './subtitle/SubtitleRenderer'
 import { AppController, type AppState } from './store/AppStore'
 import { ControlPanel } from './ui/ControlPanel'
+import { SettingsPanel } from './ui/SettingsPanel'
 import { SubtitleHistoryPanel } from './ui/SubtitleHistoryPanel'
+import type {
+  DesktopSettingsSaveResult,
+  DesktopSettingsSnapshot,
+  DesktopSettingsUpdate,
+} from './types'
 
 
 const controller = new AppController()
@@ -17,16 +29,41 @@ const controller = new AppController()
 const App: React.FC = () => {
   const [appState, setAppState] = useState<AppState>(controller.state)
   const [isHistoryOpen, setIsHistoryOpen] = useState(false)
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [desktopSettings, setDesktopSettings] = useState<DesktopSettingsSnapshot>(
+    createUnavailableDesktopSettings(),
+  )
   const [desktopOverlayState, setDesktopOverlayState] = useState<DesktopOverlayState>({
     available: false,
     visible: false,
   })
   const containerRef = useRef<HTMLDivElement | null>(null)
   const rendererRef = useRef<SubtitleRenderer | null>(null)
+  const uiText = getUiText(desktopSettings.uiLanguage)
 
   useEffect(() => {
     const unsubscribe = controller.subscribe(setAppState)
     return unsubscribe
+  }, [])
+
+  useEffect(() => {
+    let isMounted = true
+
+    loadDesktopSettings()
+      .then((settings) => {
+        if (!isMounted) {
+          return
+        }
+        setDesktopSettings(settings)
+        controller.setSourceLanguage(settings.runtime.sourceLanguage)
+      })
+      .catch((error: unknown) => {
+        console.warn('[App] failed to load desktop settings', error)
+      })
+
+    return () => {
+      isMounted = false
+    }
   }, [])
 
   useEffect(() => {
@@ -93,8 +130,19 @@ const App: React.FC = () => {
   const handleStart = (): void => {
     controller.start().catch((error: unknown) => {
       console.error('Start failed', error)
-      window.alert('Start failed. Check microphone, tab audio, or system audio permissions.')
+      window.alert(uiText.startError)
     })
+  }
+
+  const handleSettingsSave = async (
+    update: DesktopSettingsUpdate,
+  ): Promise<DesktopSettingsSaveResult> => {
+    const result = await saveDesktopSettings(update)
+    if (result.success && result.settings) {
+      setDesktopSettings(result.settings)
+      controller.setSourceLanguage(result.settings.runtime.sourceLanguage)
+    }
+    return result
   }
 
   const handleDesktopOverlayToggle = (): void => {
@@ -132,8 +180,10 @@ const App: React.FC = () => {
         ttsSettings={appState.ttsSettings}
         ttsDiagnostics={appState.ttsDiagnostics}
         desktopOverlayState={desktopOverlayState}
+        uiText={uiText}
         onStart={handleStart}
         onStop={() => controller.stop()}
+        onOpenSettings={() => setIsSettingsOpen(true)}
         onManualRevise={() => controller.requestManualRevision()}
         onOpenHistory={() => setIsHistoryOpen(true)}
         onDesktopOverlayToggle={handleDesktopOverlayToggle}
@@ -148,7 +198,16 @@ const App: React.FC = () => {
         entries={appState.subtitleHistory}
         isOpen={isHistoryOpen}
         diagnosticsText={appState.diagnosticsText}
+        uiText={uiText}
         onClose={() => setIsHistoryOpen(false)}
+      />
+
+      <SettingsPanel
+        isOpen={isSettingsOpen}
+        settings={desktopSettings}
+        uiText={uiText}
+        onClose={() => setIsSettingsOpen(false)}
+        onSave={handleSettingsSave}
       />
 
       {appState.status === 'idle' ? (
@@ -167,12 +226,30 @@ const App: React.FC = () => {
           >
             <div style={{ fontSize: '42px', lineHeight: 1 }}>AI</div>
             <div style={{ fontSize: '20px', color: '#e6edf6', fontWeight: 700 }}>
-              Live Interpreter
+              {uiText.idleTitle}
             </div>
             <div style={{ fontSize: '13px', lineHeight: 1.5 }}>
-              Start translation from the control panel. Pauses in audio trigger an automatic
-              revision pass, and history stays available for export.
+              {uiText.idleDescription}
             </div>
+            <button
+              type="button"
+              style={{
+                minHeight: '44px',
+                padding: '0 18px',
+                border: '1px solid rgba(255,255,255,0.14)',
+                borderRadius: '10px',
+                background: 'rgba(255,255,255,0.07)',
+                color: '#e6edf6',
+                cursor: 'pointer',
+                fontSize: '13px',
+                fontWeight: 700,
+                pointerEvents: 'auto',
+                WebkitTapHighlightColor: 'transparent',
+              }}
+              onClick={() => setIsSettingsOpen(true)}
+            >
+              {uiText.idleSettingsButton}
+            </button>
           </div>
         </div>
       ) : null}

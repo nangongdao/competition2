@@ -11,7 +11,7 @@ workflow. The launcher is a real desktop window, not a browser app-mode tab.
   `frontend/electron/preload.cjs`,
   `start-desktop.cmd`, `start-desktop.ps1`, frontend build paths, backend
   startup ports, Electron window behavior, floating subtitle overlay behavior,
-  or desktop shortcut install scripts.
+  desktop local settings, or desktop shortcut install scripts.
 - Scope: local Windows-first startup experience. This is not yet a packaged
   installer and does not replace the later system-audio capture evaluation.
 
@@ -29,7 +29,10 @@ npm run desktop:window --prefix frontend
 ```python
 def ensure_frontend_build(force_build: bool) -> None: ...
 def resolve_backend_port(requested_port: int) -> int: ...
-def start_backend(port: int, asr_profile: str) -> subprocess.Popen[str] | None: ...
+def load_desktop_settings(path: Path = DESKTOP_SETTINGS_LOCAL_PATH) -> DesktopSettings: ...
+def resolve_desktop_asr_profile(cli_profile: str | None, desktop_settings: DesktopSettings) -> str: ...
+def build_backend_environment(port: int, asr_profile: str, desktop_settings: DesktopSettings | None = None) -> dict[str, str]: ...
+def start_backend(port: int, asr_profile: str, desktop_settings: DesktopSettings | None = None) -> subprocess.Popen[str] | None: ...
 def start_frontend_server(port: int) -> tuple[http.server.ThreadingHTTPServer, str]: ...
 def ensure_desktop_runtime() -> Path: ...
 def launch_desktop_window(url: str, backend_ws_url: str) -> subprocess.Popen[str]: ...
@@ -59,6 +62,19 @@ def launch_desktop_window(url: str, backend_ws_url: str) -> subprocess.Popen[str
   `int8`). `--asr-profile env` preserves process/dotenv ASR settings, and
   `--asr-profile gpu` prefers `large-v3` on CUDA float16 for machines with
   enough VRAM.
+- Desktop startup may read `config/desktop-settings.local.json` for local UI,
+  translation, default source-language, and ASR-profile settings. The tracked
+  `config/desktop-settings.example.json` file documents the same shape without
+  secrets.
+- Real keys in `config/desktop-settings.local.json` must stay ignored by Git.
+  The renderer may show key presence but must not display a saved key value.
+- Backend-affecting desktop settings are injected into the backend environment
+  only when the launcher starts the backend. The UI must tell users to restart
+  desktop mode after saving provider/model/API-key/ASR settings.
+- Desktop settings must be validated through allowlists before use:
+  `uiLanguage` (`zh-CN`, `en-US`), `translation.engine` (`openai`, `claude`),
+  `runtime.asrProfile` (`light`, `cpu`, `gpu`, `env`), and
+  `runtime.sourceLanguage` (`auto`, `en`, `ja`, `ko`, `es`, `fr`, `de`).
 - Electron must render the app in a `BrowserWindow` with `nodeIntegration:
   false`, `contextIsolation: true`, and `sandbox: true`.
 - Electron should enforce a single app instance and focus the existing window
@@ -84,6 +100,19 @@ Environment keys:
 | `AI_INTERPRETER_DESKTOP_URL` | Internal Electron URL injected by the Python launcher |
 | `AI_INTERPRETER_LOG_FILE` | Internal Electron path for opening launcher logs from the tray |
 | `VITE_WS_URL` | Override frontend WebSocket base URL at build time |
+
+Local desktop settings keys:
+
+| JSON path | Backend/runtime mapping |
+| --- | --- |
+| `uiLanguage` | Frontend interface language only |
+| `translation.engine` | `NMT_ENGINE` |
+| `translation.model` | `NMT_MODEL` |
+| `translation.openaiBaseUrl` | `OPENAI_BASE_URL` |
+| `translation.openaiApiKey` | `OPENAI_API_KEY` |
+| `translation.anthropicApiKey` | `ANTHROPIC_API_KEY` |
+| `runtime.asrProfile` | Desktop launcher ASR profile selection |
+| `runtime.sourceLanguage` | `SOURCE_LANGUAGE` |
 
 ## Scenario: Floating Subtitle Overlay
 
@@ -113,6 +142,9 @@ Environment keys:
   the floating subtitle overlay without stopping the translation session.
 - Browser-only startup must keep the existing in-page subtitle renderer as the
   fallback path when `window.aiInterpreterDesktop` is unavailable.
+- Browser-only startup must keep the settings panel safe: local desktop settings
+  read/write controls are disabled or reported unavailable when the preload
+  bridge is absent.
 - The overlay should use the primary display work area for MVP positioning and
   reposition when display metrics change.
 
@@ -126,14 +158,19 @@ Environment keys:
 | User restores overlay | Overlay window reappears without reconnecting the backend session |
 | Main window closes | Overlay window closes and launcher cleanup proceeds normally |
 | Display metrics change | Overlay bounds are refreshed to the primary work area |
+| Browser mode opens settings | Settings panel reports desktop settings unavailable and does not crash |
+| Saved API key exists | Renderer shows configured/missing state, not the raw saved key |
+| User leaves key field blank | Electron preserves the existing saved key |
+| User clears key | Electron writes an empty key value to the local settings file |
+| User saves provider/model/ASR settings | UI warns that restart is required before backend changes take effect |
 
 ### 4. Tests Required
 
 - Run `node --check frontend\electron\main.cjs` after changing Electron main
   process behavior.
 - Run `node --check frontend\electron\preload.cjs` after changing preload IPC.
-- Run `npm.cmd run test` in `frontend` after changing desktop subtitle snapshot
-  helpers or routing.
+- Run `npm.cmd run test` in `frontend` after changing desktop subtitle snapshot,
+  desktop settings helpers, i18n, or routing.
 - Run `npm.cmd run build` in `frontend` after changing the overlay entry,
   TypeScript types, CSS, or Vite assets.
 - Manually smoke-test `start-desktop.cmd`: confirm the main control window

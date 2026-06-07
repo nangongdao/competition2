@@ -113,9 +113,55 @@ export type SourceLanguage = 'auto' | 'en' | 'ja' | 'ko' | 'es' | 'fr' | 'de'
 
 export type TargetLanguage = 'zh-CN'
 
+export type UiLanguage = 'zh-CN' | 'en-US'
+
+export type TranslationEngine = 'openai' | 'claude'
+
+export type DesktopAsrProfile = 'light' | 'cpu' | 'gpu' | 'env'
+
 export interface LanguageConfig {
   sourceLanguage: SourceLanguage
   targetLanguage: TargetLanguage
+}
+
+export interface DesktopSettingsSnapshot {
+  available: boolean
+  configPath?: string
+  uiLanguage: UiLanguage
+  translation: {
+    engine: TranslationEngine
+    model: string
+    openaiBaseUrl: string
+    hasOpenaiApiKey: boolean
+    hasAnthropicApiKey: boolean
+  }
+  runtime: {
+    asrProfile: DesktopAsrProfile
+    sourceLanguage: SourceLanguage
+  }
+}
+
+export interface DesktopSettingsUpdate {
+  uiLanguage: UiLanguage
+  translation: {
+    engine: TranslationEngine
+    model: string
+    openaiBaseUrl: string
+    openaiApiKey: string
+    anthropicApiKey: string
+    clearOpenaiApiKey: boolean
+    clearAnthropicApiKey: boolean
+  }
+  runtime: {
+    asrProfile: DesktopAsrProfile
+    sourceLanguage: SourceLanguage
+  }
+}
+
+export interface DesktopSettingsSaveResult {
+  success: boolean
+  reason: string
+  settings?: DesktopSettingsSnapshot
 }
 
 export type AudioCaptureBackend = 'audio-worklet' | 'script-processor'

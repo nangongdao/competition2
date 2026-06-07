@@ -36,6 +36,10 @@ Implemented capabilities now include:
 - Electron transparent always-on-top floating subtitle overlay so desktop users
   can view translations over other apps while using the main window as the
   control panel.
+- Electron desktop settings panel now stores local provider/model/API-key
+  settings in a Git-ignored settings file, exposes only key presence to the
+  renderer, injects settings through the launcher on startup, and supports
+  Chinese/English interface language switching.
 - Windows desktop shortcut installer scripts for desktop launching.
 - Durable subtitle history that is separate from the visible subtitle list.
 - Subtitle history panel with transcript copy and TXT download.
@@ -52,6 +56,10 @@ Most recent recorded validation:
 
 - `npm.cmd run build`
 - `npm.cmd run test`
+- `node --check frontend\electron\main.cjs`
+- `node --check frontend\electron\preload.cjs`
+- `.\\backend\\.venv\\Scripts\\python.exe -m unittest tools.test_desktop_launcher`
+- `.\\backend\\.venv\\Scripts\\python.exe -m compileall tools\\desktop_launcher.py tools\\test_desktop_launcher.py`
 - `npm.cmd audit`
 - `.\\backend\\.venv\\Scripts\\python.exe -m unittest backend.test_pipeline`
 - `python -m unittest backend.test_endurance_runner`

@@ -7,6 +7,7 @@ import {
   formatVttSubtitles,
   hasExportableSubtitles,
 } from '../subtitle/subtitle-export'
+import type { UiText } from '../i18n'
 import type { SubtitleEntry } from '../types'
 
 
@@ -14,6 +15,7 @@ interface SubtitleHistoryPanelProps {
   entries: SubtitleEntry[]
   isOpen: boolean
   diagnosticsText: string
+  uiText: UiText
   onClose: () => void
 }
 
@@ -90,9 +92,11 @@ export const SubtitleHistoryPanel: React.FC<SubtitleHistoryPanelProps> = ({
   entries,
   isOpen,
   diagnosticsText,
+  uiText,
   onClose,
 }) => {
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'failed'>('idle')
+  const text = uiText.history
 
   const stats = useMemo(() => {
     return entries.reduce(
@@ -219,7 +223,7 @@ export const SubtitleHistoryPanel: React.FC<SubtitleHistoryPanelProps> = ({
 
   return (
     <section
-      aria-label="Subtitle history"
+      aria-label={text.ariaLabel}
       role="dialog"
       aria-modal="false"
       style={panelStyle}
@@ -227,16 +231,16 @@ export const SubtitleHistoryPanel: React.FC<SubtitleHistoryPanelProps> = ({
       <div style={headerStyle}>
         <div>
           <div style={{ color: '#ffffff', fontSize: '15px', fontWeight: 800 }}>
-            Subtitle history
+            {text.title}
           </div>
           <div style={{ color: '#91a0b3', fontSize: '12px', marginTop: '4px' }}>
-            Latest {recentEntries.length} of {entries.length} entries
+            {text.latestSummary(recentEntries.length, entries.length)}
           </div>
         </div>
         <div style={{ borderRadius: '12px', overflow: 'hidden' }}>
           <button
             type="button"
-            aria-label="Close subtitle history"
+            aria-label={text.closeAriaLabel}
             style={{
               ...tapSafeButtonStyle,
               minHeight: '44px',
@@ -246,15 +250,15 @@ export const SubtitleHistoryPanel: React.FC<SubtitleHistoryPanelProps> = ({
             }}
             onClick={onClose}
           >
-            Close
+            {text.close}
           </button>
         </div>
       </div>
 
       <div style={summaryStyle}>
-        <SummaryStat label="Source" value={stats.source} />
-        <SummaryStat label="Translated" value={stats.translated} />
-        <SummaryStat label="Revised" value={stats.revised} />
+        <SummaryStat label={text.source} value={stats.source} />
+        <SummaryStat label={text.translated} value={stats.translated} />
+        <SummaryStat label={text.revised} value={stats.revised} />
       </div>
 
       <div style={listStyle}>
@@ -267,7 +271,7 @@ export const SubtitleHistoryPanel: React.FC<SubtitleHistoryPanelProps> = ({
               fontSize: '13px',
             }}
           >
-            No subtitles yet.
+            {text.empty}
           </div>
         ) : recentEntries.map((entry) => (
           <article
@@ -301,7 +305,9 @@ export const SubtitleHistoryPanel: React.FC<SubtitleHistoryPanelProps> = ({
               <span>{formatTime(entry.timestamp)}</span>
               {entry.isRevised ? (
                 <span style={{ color: '#f4c84c', fontWeight: 700 }}>
-                  {entry.revisionReason === 'asr_correction' ? 'ASR revised' : 'Translation revised'}
+                  {entry.revisionReason === 'asr_correction'
+                    ? text.asrRevised
+                    : text.translationRevised}
                 </span>
               ) : null}
             </div>
@@ -337,7 +343,11 @@ export const SubtitleHistoryPanel: React.FC<SubtitleHistoryPanelProps> = ({
               void handleCopy()
             }}
           >
-            {copyStatus === 'copied' ? 'Copied' : copyStatus === 'failed' ? 'Copy failed' : 'Copy TXT'}
+            {copyStatus === 'copied'
+              ? text.copied
+              : copyStatus === 'failed'
+                ? text.copyFailed
+                : text.copyTxt}
           </button>
         </div>
         <div style={{ borderRadius: '12px', overflow: 'hidden' }}>
@@ -354,21 +364,21 @@ export const SubtitleHistoryPanel: React.FC<SubtitleHistoryPanelProps> = ({
             }}
             onClick={handleDownloadTranscript}
           >
-            Download TXT
+            {text.downloadTxt}
           </button>
         </div>
         <ExportButton
-          label="Download SRT"
+          label={text.downloadSrt}
           disabled={!canExport}
           onClick={handleDownloadSrt}
         />
         <ExportButton
-          label="Download VTT"
+          label={text.downloadVtt}
           disabled={!canExport}
           onClick={handleDownloadVtt}
         />
         <ExportButton
-          label="Notes MD"
+          label={text.notesMd}
           disabled={!canExport}
           onClick={handleDownloadNotes}
         />
@@ -387,7 +397,7 @@ export const SubtitleHistoryPanel: React.FC<SubtitleHistoryPanelProps> = ({
             }}
             onClick={handleDownloadDiagnostics}
           >
-            Download diagnostics
+            {text.downloadDiagnostics}
           </button>
         </div>
       </div>

@@ -6,6 +6,8 @@ const CHANNELS = {
   state: 'desktop-overlay:state',
   sendSnapshot: 'desktop-overlay:send-snapshot',
   snapshot: 'desktop-overlay:snapshot',
+  getSettings: 'desktop-settings:get',
+  saveSettings: 'desktop-settings:save',
 }
 
 contextBridge.exposeInMainWorld('aiInterpreterDesktop', {
@@ -42,5 +44,12 @@ contextBridge.exposeInMainWorld('aiInterpreterDesktop', {
       ipcRenderer.removeListener(CHANNELS.snapshot, listener)
     }
   },
-})
 
+  getSettings() {
+    return ipcRenderer.invoke(CHANNELS.getSettings)
+  },
+
+  saveSettings(update) {
+    return ipcRenderer.invoke(CHANNELS.saveSettings, update)
+  },
+})

@@ -10,12 +10,16 @@ const {
   shell,
   session,
 } = require('electron')
+const fs = require('node:fs')
 const path = require('node:path')
 
 const APP_NAME = 'AI Interpreter'
 const appUrl = process.env.AI_INTERPRETER_DESKTOP_URL
 const launcherLogFile = process.env.AI_INTERPRETER_LOG_FILE
 const preloadScript = path.join(__dirname, 'preload.cjs')
+const settingsDir = path.join(__dirname, '..', '..', 'config')
+const settingsPath = path.join(settingsDir, 'desktop-settings.local.json')
+const settingsExamplePath = path.join(settingsDir, 'desktop-settings.example.json')
 
 const OVERLAY_CHANNELS = {
   getState: 'desktop-overlay:get-state',
@@ -24,6 +28,16 @@ const OVERLAY_CHANNELS = {
   sendSnapshot: 'desktop-overlay:send-snapshot',
   snapshot: 'desktop-overlay:snapshot',
 }
+
+const SETTINGS_CHANNELS = {
+  get: 'desktop-settings:get',
+  save: 'desktop-settings:save',
+}
+
+const UI_LANGUAGES = new Set(['zh-CN', 'en-US'])
+const TRANSLATION_ENGINES = new Set(['openai', 'claude'])
+const ASR_PROFILES = new Set(['light', 'cpu', 'gpu', 'env'])
+const SOURCE_LANGUAGES = new Set(['auto', 'en', 'ja', 'ko', 'es', 'fr', 'de'])
 
 let mainWindow = null
 let overlayWindow = null
@@ -235,6 +249,166 @@ function createAppIcon() {
   )
 }
 
+function createDefaultSettings() {
+  return {
+    uiLanguage: 'zh-CN',
+    translation: {
+      engine: 'openai',
+      model: 'gpt-4o-mini',
+      openaiBaseUrl: 'https://api.openai.com/v1',
+      openaiApiKey: '',
+      anthropicApiKey: '',
+    },
+    runtime: {
+      asrProfile: 'light',
+      sourceLanguage: 'en',
+    },
+  }
+}
+
+function readSettingsFile() {
+  const fallback = createDefaultSettings()
+  const candidatePaths = [settingsPath, settingsExamplePath]
+
+  for (const candidatePath of candidatePaths) {
+    try {
+      if (!fs.existsSync(candidatePath)) {
+        continue
+      }
+
+      const parsed = JSON.parse(fs.readFileSync(candidatePath, 'utf8'))
+      return normalizeSettings(parsed, fallback)
+    } catch (error) {
+      console.error('[Electron] failed to read desktop settings', error)
+      return fallback
+    }
+  }
+
+  return fallback
+}
+
+function writeSettingsFile(settings) {
+  fs.mkdirSync(settingsDir, { recursive: true })
+  const tempPath = `${settingsPath}.tmp`
+  fs.writeFileSync(tempPath, `${JSON.stringify(settings, null, 2)}\n`, 'utf8')
+  fs.renameSync(tempPath, settingsPath)
+}
+
+function normalizeSettings(rawSettings, fallback) {
+  const raw = isPlainObject(rawSettings) ? rawSettings : {}
+  const rawTranslation = isPlainObject(raw.translation) ? raw.translation : {}
+  const rawRuntime = isPlainObject(raw.runtime) ? raw.runtime : {}
+
+  return {
+    uiLanguage: pickAllowed(raw.uiLanguage, UI_LANGUAGES, fallback.uiLanguage),
+    translation: {
+      engine: pickAllowed(
+        rawTranslation.engine,
+        TRANSLATION_ENGINES,
+        fallback.translation.engine,
+      ),
+      model: pickString(rawTranslation.model, fallback.translation.model),
+      openaiBaseUrl: pickString(
+        rawTranslation.openaiBaseUrl,
+        fallback.translation.openaiBaseUrl,
+      ),
+      openaiApiKey: pickString(rawTranslation.openaiApiKey, fallback.translation.openaiApiKey),
+      anthropicApiKey: pickString(
+        rawTranslation.anthropicApiKey,
+        fallback.translation.anthropicApiKey,
+      ),
+    },
+    runtime: {
+      asrProfile: pickAllowed(rawRuntime.asrProfile, ASR_PROFILES, fallback.runtime.asrProfile),
+      sourceLanguage: pickAllowed(
+        rawRuntime.sourceLanguage,
+        SOURCE_LANGUAGES,
+        fallback.runtime.sourceLanguage,
+      ),
+    },
+  }
+}
+
+function mergeSettingsUpdate(update) {
+  const current = readSettingsFile()
+  const rawUpdate = isPlainObject(update) ? update : {}
+  const rawTranslation = isPlainObject(rawUpdate.translation) ? rawUpdate.translation : {}
+  const rawRuntime = isPlainObject(rawUpdate.runtime) ? rawUpdate.runtime : {}
+
+  const next = normalizeSettings(
+    {
+      uiLanguage: rawUpdate.uiLanguage,
+      translation: {
+        engine: rawTranslation.engine,
+        model: rawTranslation.model,
+        openaiBaseUrl: rawTranslation.openaiBaseUrl,
+      },
+      runtime: {
+        asrProfile: rawRuntime.asrProfile,
+        sourceLanguage: rawRuntime.sourceLanguage,
+      },
+    },
+    current,
+  )
+  next.translation.openaiApiKey = resolveSecretUpdate(
+    current.translation.openaiApiKey,
+    rawTranslation.openaiApiKey,
+    rawTranslation.clearOpenaiApiKey,
+  )
+  next.translation.anthropicApiKey = resolveSecretUpdate(
+    current.translation.anthropicApiKey,
+    rawTranslation.anthropicApiKey,
+    rawTranslation.clearAnthropicApiKey,
+  )
+
+  return next
+}
+
+function resolveSecretUpdate(currentValue, nextValue, shouldClear) {
+  if (shouldClear === true) {
+    return ''
+  }
+  const value = typeof nextValue === 'string' ? nextValue.trim() : ''
+  return value || currentValue
+}
+
+function createSettingsSnapshot(settings) {
+  return {
+    available: true,
+    configPath: settingsPath,
+    uiLanguage: settings.uiLanguage,
+    translation: {
+      engine: settings.translation.engine,
+      model: settings.translation.model,
+      openaiBaseUrl: settings.translation.openaiBaseUrl,
+      hasOpenaiApiKey: settings.translation.openaiApiKey.trim().length > 0,
+      hasAnthropicApiKey: settings.translation.anthropicApiKey.trim().length > 0,
+    },
+    runtime: {
+      asrProfile: settings.runtime.asrProfile,
+      sourceLanguage: settings.runtime.sourceLanguage,
+    },
+  }
+}
+
+function pickAllowed(value, allowedValues, fallback) {
+  if (typeof value === 'string' && allowedValues.has(value.trim())) {
+    return value.trim()
+  }
+  return fallback
+}
+
+function pickString(value, fallback) {
+  if (typeof value === 'string' && value.trim().length > 0) {
+    return value.trim()
+  }
+  return fallback
+}
+
+function isPlainObject(value) {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
+}
+
 function showMainWindow() {
   if (!mainWindow) {
     if (appUrl) {
@@ -331,6 +505,30 @@ function registerOverlayIpc() {
   })
 }
 
+function registerSettingsIpc() {
+  ipcMain.handle(SETTINGS_CHANNELS.get, () => {
+    return createSettingsSnapshot(readSettingsFile())
+  })
+
+  ipcMain.handle(SETTINGS_CHANNELS.save, (_event, update) => {
+    try {
+      const settings = mergeSettingsUpdate(update)
+      writeSettingsFile(settings)
+      return {
+        success: true,
+        reason: 'desktop settings saved',
+        settings: createSettingsSnapshot(settings),
+      }
+    } catch (error) {
+      console.error('[Electron] failed to save desktop settings', error)
+      return {
+        success: false,
+        reason: 'failed to save desktop settings',
+      }
+    }
+  })
+}
+
 if (singleInstanceLock) {
   app.setName(APP_NAME)
 
@@ -348,6 +546,7 @@ if (singleInstanceLock) {
     }
 
     registerOverlayIpc()
+    registerSettingsIpc()
     screen.on('display-metrics-changed', positionOverlayWindow)
     screen.on('display-added', positionOverlayWindow)
     screen.on('display-removed', positionOverlayWindow)

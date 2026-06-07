@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 
 import type { DesktopOverlayState } from '../desktop/overlay'
+import type { UiText } from '../i18n'
 import type {
   AppStatus,
   ClientDiagnostics,
@@ -28,8 +29,10 @@ interface ControlPanelProps {
   ttsSettings: TtsSettings
   ttsDiagnostics: TtsDiagnostics
   desktopOverlayState: DesktopOverlayState
+  uiText: UiText
   onStart: () => void
   onStop: () => void
+  onOpenSettings: () => void
   onManualRevise: () => void
   onOpenHistory: () => void
   onDesktopOverlayToggle: () => void
@@ -41,14 +44,6 @@ interface ControlPanelProps {
 }
 
 
-const STATUS_LABELS: Record<AppStatus, string> = {
-  idle: 'Ready',
-  capturing: 'Capturing audio',
-  translating: 'Live translation',
-  error: 'Action needed',
-}
-
-
 const STATUS_COLORS: Record<AppStatus, string> = {
   idle: '#8f9aa8',
   capturing: '#58b06a',
@@ -57,28 +52,7 @@ const STATUS_COLORS: Record<AppStatus, string> = {
 }
 
 
-const MODE_OPTIONS: Array<{ label: string; value: SubtitleMode }> = [
-  { label: 'Both', value: 'bilingual' },
-  { label: 'Translation', value: 'translation_only' },
-  { label: 'Source', value: 'source_only' },
-]
-
-
-const SOURCE_LANGUAGE_OPTIONS: Array<{ label: string; value: SourceLanguage }> = [
-  { label: 'Auto detect', value: 'auto' },
-  { label: 'English', value: 'en' },
-  { label: 'Japanese', value: 'ja' },
-  { label: 'Korean', value: 'ko' },
-  { label: 'Spanish', value: 'es' },
-  { label: 'French', value: 'fr' },
-  { label: 'German', value: 'de' },
-]
-
-
-const REVISION_LABELS: Record<RevisionReason, string> = {
-  asr_correction: 'ASR',
-  translation_correction: 'Translation',
-}
+const SOURCE_LANGUAGE_VALUES: SourceLanguage[] = ['auto', 'en', 'ja', 'ko', 'es', 'fr', 'de']
 
 
 const tapSafeButtonStyle: React.CSSProperties = {
@@ -140,8 +114,10 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   ttsSettings,
   ttsDiagnostics,
   desktopOverlayState,
+  uiText,
   onStart,
   onStop,
+  onOpenSettings,
   onManualRevise,
   onOpenHistory,
   onDesktopOverlayToggle,
@@ -152,6 +128,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   onTtsRateChange,
 }) => {
   const [showDetails, setShowDetails] = useState(false)
+  const text = uiText.control
   const isActive = status === 'capturing' || status === 'translating'
   const canUseTts = ttsDiagnostics.isSupported
 
@@ -168,24 +145,48 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   }, [onManualRevise])
 
   return (
-    <aside aria-label="Live translation controls" className="live-control-panel">
-      <div style={{ display: 'flex', alignItems: 'center', fontSize: '13px', color: '#d9e1eb' }}>
-        <span
-          aria-hidden="true"
+    <aside aria-label={text.ariaLabel} className="live-control-panel">
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '10px',
+          fontSize: '13px',
+          color: '#d9e1eb',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
+          <span
+            aria-hidden="true"
+            style={{
+              display: 'inline-block',
+              width: '8px',
+              height: '8px',
+              marginRight: '8px',
+              borderRadius: '999px',
+              background: STATUS_COLORS[status],
+            }}
+          />
+          <span style={{ minWidth: 0 }}>{text.statusLabels[status]}</span>
+        </div>
+        <button
+          type="button"
           style={{
-            display: 'inline-block',
-            width: '8px',
-            height: '8px',
-            marginRight: '8px',
-            borderRadius: '999px',
-            background: STATUS_COLORS[status],
+            ...secondaryButtonStyle,
+            minHeight: '34px',
+            padding: '0 10px',
+            borderRadius: '10px',
+            fontSize: '12px',
           }}
-        />
-        <span>{STATUS_LABELS[status]}</span>
+          onClick={onOpenSettings}
+        >
+          {text.settingsButton}
+        </button>
       </div>
 
       <div style={{ fontSize: '11px', color: '#91a0b3' }}>
-        WebSocket: {connectionState}
+        {text.websocket}: {connectionState}
       </div>
 
       <label
@@ -199,10 +200,10 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
           fontSize: '12px',
         }}
       >
-        <span>Source</span>
+        <span>{text.source}</span>
         <select
           value={languageConfig.sourceLanguage}
-          aria-label="Source language"
+          aria-label={text.sourceAriaLabel}
           style={{
             minWidth: 0,
             width: '100%',
@@ -217,9 +218,9 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
           }}
           onChange={(event) => onSourceLanguageChange(parseSourceLanguage(event.currentTarget.value))}
         >
-          {SOURCE_LANGUAGE_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
+          {SOURCE_LANGUAGE_VALUES.map((value) => (
+            <option key={value} value={value}>
+              {text.sourceOptions[value]}
             </option>
           ))}
         </select>
@@ -233,13 +234,13 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         }}
       >
         <div style={metricStyle}>
-          <div style={{ fontSize: '11px', color: '#91a0b3' }}>Translation fixes</div>
+          <div style={{ fontSize: '11px', color: '#91a0b3' }}>{text.translationFixes}</div>
           <div style={{ fontSize: '18px', fontWeight: 700, color: '#ffffff' }}>
             {translationRevisionCount}
           </div>
         </div>
         <div style={metricStyle}>
-          <div style={{ fontSize: '11px', color: '#91a0b3' }}>ASR fixes</div>
+          <div style={{ fontSize: '11px', color: '#91a0b3' }}>{text.asrFixes}</div>
           <div style={{ fontSize: '18px', fontWeight: 700, color: '#ffffff' }}>
             {asrRevisionCount}
           </div>
@@ -247,7 +248,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
       </div>
 
       <div style={{ fontSize: '11px', color: '#91a0b3' }}>
-        Last fix: {lastRevisionReason ? REVISION_LABELS[lastRevisionReason] : 'None'}
+        {text.lastFix}: {lastRevisionReason ? text.revisionLabels[lastRevisionReason] : text.none}
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -261,7 +262,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             }}
             onClick={isActive ? onStop : onStart}
           >
-            {isActive ? 'Stop translation' : 'Start translation'}
+            {isActive ? text.stopTranslation : text.startTranslation}
           </button>
         </div>
 
@@ -274,7 +275,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             }}
             onClick={onManualRevise}
           >
-            Revise now
+            {text.reviseNow}
           </button>
         </div>
 
@@ -287,7 +288,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             }}
             onClick={onOpenHistory}
           >
-            History and export ({subtitleHistoryCount})
+            {text.historyAndExport(subtitleHistoryCount)}
           </button>
         </div>
 
@@ -308,7 +309,9 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
               }}
               onClick={onDesktopOverlayToggle}
             >
-              {desktopOverlayState.visible ? 'Floating subtitles on' : 'Floating subtitles off'}
+              {desktopOverlayState.visible
+                ? text.floatingSubtitlesOn
+                : text.floatingSubtitlesOff}
             </button>
           </div>
         ) : null}
@@ -340,12 +343,14 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             }}
             onClick={() => onTtsEnabledChange(!ttsSettings.enabled)}
           >
-            {canUseTts ? (ttsSettings.enabled ? 'Voice on' : 'Voice off') : 'Voice unavailable'}
-          </button>
+              {canUseTts
+                ? (ttsSettings.enabled ? text.voiceOn : text.voiceOff)
+                : text.voiceUnavailable}
+            </button>
         </div>
 
         <VoiceSlider
-          label="Volume"
+          label={text.volume}
           value={ttsSettings.volume}
           min={0}
           max={1}
@@ -356,7 +361,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         />
 
         <VoiceSlider
-          label="Rate"
+          label={text.rate}
           value={ttsSettings.rate}
           min={0.7}
           max={1.35}
@@ -367,12 +372,15 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         />
 
         <div style={{ color: '#91a0b3', fontSize: '11px' }}>
-          Voice: {ttsDiagnostics.isSpeaking ? 'speaking' : 'idle'} / queue {ttsDiagnostics.queueLength}
+          {text.voiceStatus(
+            ttsDiagnostics.isSpeaking ? text.voiceStates.speaking : text.voiceStates.idle,
+            ttsDiagnostics.queueLength,
+          )}
         </div>
       </div>
 
       <div className="control-mode-group">
-        {MODE_OPTIONS.map((option) => {
+        {text.modeOptions.map((option) => {
           const isSelected = option.value === subtitleMode
           return (
             <div
@@ -414,7 +422,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
           }}
           onClick={() => setShowDetails((value) => !value)}
         >
-          {showDetails ? 'Hide details' : 'Show details'}
+          {showDetails ? text.hideDetails : text.showDetails}
         </button>
       </div>
 
@@ -433,29 +441,29 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             color: '#b9c5d3',
           }}
         >
-          <DetailRow label="Session" value={serverDiagnostics?.session_id ?? clientDiagnostics.sessionId} />
-          <DetailRow label="Capture" value={formatCaptureBackend(clientDiagnostics.captureBackend)} />
-          <DetailRow label="Voice" value={formatVoiceStatus(ttsDiagnostics)} />
-          <DetailRow label="Voice queue" value={ttsDiagnostics.queueLength.toString()} />
-          <DetailRow label="Voice errors" value={ttsDiagnostics.failedUtterances.toString()} />
-          <DetailRow label="Sent chunks" value={clientDiagnostics.sentAudioChunks.toString()} />
-          <DetailRow label="Client drops" value={clientDiagnostics.droppedAudioChunks.toString()} />
-          <DetailRow label="Server drops" value={(serverDiagnostics?.audio_chunks_dropped ?? 0).toString()} />
-          <DetailRow label="Reconnects" value={clientDiagnostics.reconnectAttempts.toString()} />
+          <DetailRow label={text.details.session} value={serverDiagnostics?.session_id ?? clientDiagnostics.sessionId} />
+          <DetailRow label={text.details.capture} value={formatCaptureBackend(clientDiagnostics.captureBackend, text)} />
+          <DetailRow label={text.details.voice} value={formatVoiceStatus(ttsDiagnostics, text)} />
+          <DetailRow label={text.details.voiceQueue} value={ttsDiagnostics.queueLength.toString()} />
+          <DetailRow label={text.details.voiceErrors} value={ttsDiagnostics.failedUtterances.toString()} />
+          <DetailRow label={text.details.sentChunks} value={clientDiagnostics.sentAudioChunks.toString()} />
+          <DetailRow label={text.details.clientDrops} value={clientDiagnostics.droppedAudioChunks.toString()} />
+          <DetailRow label={text.details.serverDrops} value={(serverDiagnostics?.audio_chunks_dropped ?? 0).toString()} />
+          <DetailRow label={text.details.reconnects} value={clientDiagnostics.reconnectAttempts.toString()} />
           <DetailRow
-            label="ASR latency"
+            label={text.details.asrLatency}
             value={formatLatency(serverDiagnostics?.latency.capture_to_asr_ms)}
           />
           <DetailRow
-            label="First token"
+            label={text.details.firstToken}
             value={formatLatency(serverDiagnostics?.latency.asr_to_first_token_ms)}
           />
           <DetailRow
-            label="Final text"
+            label={text.details.finalText}
             value={formatLatency(serverDiagnostics?.latency.asr_to_translation_final_ms)}
           />
           <DetailRow
-            label="API calls"
+            label={text.details.apiCalls}
             value={formatCounterMap(serverDiagnostics?.api_call_counts)}
           />
         </div>
@@ -547,26 +555,29 @@ function formatLatency(summary: { count: number; avg_ms: number; max_ms: number 
 }
 
 
-function formatCaptureBackend(backend: ClientDiagnostics['captureBackend']): string {
+function formatCaptureBackend(
+  backend: ClientDiagnostics['captureBackend'],
+  text: UiText['control'],
+): string {
   switch (backend) {
     case 'audio-worklet':
-      return 'AudioWorklet'
+      return text.captureBackends.audioWorklet
     case 'script-processor':
-      return 'ScriptProcessor'
+      return text.captureBackends.scriptProcessor
     default:
-      return '-'
+      return text.captureBackends.unknown
   }
 }
 
 
-function formatVoiceStatus(diagnostics: TtsDiagnostics): string {
+function formatVoiceStatus(diagnostics: TtsDiagnostics, text: UiText['control']): string {
   if (!diagnostics.isSupported) {
-    return 'unsupported'
+    return text.voiceStates.unsupported
   }
   if (!diagnostics.enabled) {
-    return 'off'
+    return text.voiceStates.off
   }
-  return diagnostics.isSpeaking ? 'speaking' : 'ready'
+  return diagnostics.isSpeaking ? text.voiceStates.speaking : text.voiceStates.ready
 }
 
 
@@ -584,6 +595,6 @@ function formatCounterMap(values: Record<string, number> | undefined): string {
 
 
 function parseSourceLanguage(value: string): SourceLanguage {
-  const option = SOURCE_LANGUAGE_OPTIONS.find((item) => item.value === value)
-  return option?.value ?? 'en'
+  const option = SOURCE_LANGUAGE_VALUES.find((item) => item === value)
+  return option ?? 'en'
 }

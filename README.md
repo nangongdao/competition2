@@ -38,6 +38,9 @@ Implemented product capabilities now include:
 - Electron floating subtitle overlay that opens a transparent always-on-top
   subtitle window above other desktop apps while the main window remains the
   control panel.
+- Desktop settings panel for local provider/model/API-key configuration, with
+  Chinese/English interface language switching and a Git-ignored local settings
+  file.
 - Windows desktop shortcut installer scripts for launching the app from the desktop.
 - Durable subtitle history separated from the short visible subtitle list.
 - Transcript copy and TXT download from the subtitle history panel.
@@ -56,6 +59,10 @@ Recent validation:
 
 - `npm.cmd run test` in `frontend`.
 - `npm.cmd run build` in `frontend`.
+- `node --check frontend\electron\main.cjs`.
+- `node --check frontend\electron\preload.cjs`.
+- `.\\backend\\.venv\\Scripts\\python.exe -m unittest tools.test_desktop_launcher`.
+- `.\\backend\\.venv\\Scripts\\python.exe -m compileall tools\\desktop_launcher.py tools\\test_desktop_launcher.py`.
 - `npm.cmd audit` in `frontend`.
 - `.\\backend\\.venv\\Scripts\\python.exe -m unittest backend.test_pipeline`.
 - `python -m unittest backend.test_endurance_runner`.
@@ -98,6 +105,25 @@ In desktop mode, use the main window as the control panel. Live subtitles appear
 in the floating overlay near the bottom of the screen, not only inside the main
 window. The control panel button `Floating subtitles on/off` and the tray menu
 can hide or restore the overlay without stopping the translation session.
+
+Use `Settings` / `设置` in the control window to configure the desktop app
+without editing secret files by hand. The panel can save:
+
+- Interface language: Chinese or English.
+- OpenAI-compatible translation engine, model, base URL, and API key.
+- Anthropic API key for Claude-compatible use.
+- Desktop ASR profile (`light`, `cpu`, `gpu`, or `env`).
+- Default source language for new sessions.
+
+Real values are written to `config/desktop-settings.local.json`, which is
+ignored by Git. The tracked `config/desktop-settings.example.json` file is the
+GitHub-safe template with the same shape and no real key. The renderer only
+receives whether a saved key exists; it does not display the stored key value.
+
+Backend-affecting settings such as translation engine, model, API key, base URL,
+and ASR profile are read by the Python launcher when the backend starts, so
+restart the desktop app after saving them. Interface language changes apply in
+the frontend immediately after saving.
 
 Startup logs are written to `logs/desktop-launcher.log`. If port `8000` is
 occupied by an unhealthy or stale process, the launcher chooses another local

@@ -19,6 +19,8 @@ logs/
 .npm-cache/
 .electron-cache/
 
+config/desktop-settings.local.json
+
 .trellis/.runtime/
 .trellis/workspace/
 
