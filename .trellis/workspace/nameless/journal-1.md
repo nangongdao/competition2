@@ -404,3 +404,36 @@ Added a web-first local launcher, browser-accessible local settings API, fronten
 ### Next Steps
 
 - None - task complete
+
+
+## Session 13: 默认远程 ASR 启动
+
+**Date**: 2026-06-07
+**Task**: 默认远程 ASR 启动
+**Branch**: `docs/delivery-pr-workflow`
+
+### Summary
+
+将本地启动默认 ASR 从本地 Whisper 改为远程 OpenAI-compatible 转写，保留本地 Whisper profiles；同步设置界面、文档、规格和测试，并完成后端健康烟测。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `74b6893` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
