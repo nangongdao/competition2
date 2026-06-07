@@ -20,6 +20,7 @@ Implemented product capabilities now include:
 - AudioWorklet-first browser audio capture with a ScriptProcessor fallback for unsupported browsers.
 - Client diagnostics show which capture backend is active so AudioWorklet and fallback sessions can be compared.
 - Local WebSocket endurance runner for sending paced PCM audio and collecting diagnostics JSON reports.
+- Endurance reports now summarize API/revision counters and final-subtitle ordering anomalies.
 - Secret-safe endurance preflight for checking Redis, Whisper, CUDA, and provider key readiness before long runs.
 - Electron desktop launcher that starts the built frontend, FastAPI backend, and a native desktop window from a double-click entry.
 - Electron single-instance, tray restore, minimize-to-tray, and startup-log menu behavior for a more software-like local desktop experience.
@@ -108,7 +109,7 @@ Run the backend, then use the local endurance runner to send paced 16 kHz mono
 float32 PCM chunks and capture a diagnostics report:
 
 ```bash
-python tools/endurance_runner.py --duration-seconds 1800 --source silence --output reports/endurance-30m.json --max-dropped-chunks 0 --max-queue-depth 8 --min-received-ratio 0.99
+python tools/endurance_runner.py --duration-seconds 1800 --source silence --output reports/endurance-30m.json --max-dropped-chunks 0 --max-queue-depth 8 --min-received-ratio 0.99 --max-subtitle-order-violations 0
 ```
 
 For speech-like validation, provide a 16 kHz mono PCM WAV file:

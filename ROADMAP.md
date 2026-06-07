@@ -24,6 +24,7 @@ Implemented capabilities now include:
 - AudioWorklet-first browser audio capture with a ScriptProcessor fallback for unsupported browsers.
 - Client diagnostics now expose the active capture backend for AudioWorklet versus fallback validation.
 - Local WebSocket endurance runner that sends paced PCM audio and writes diagnostics JSON reports.
+- Endurance runner summaries now expose API-call counters, revision counters, and final-subtitle ordering anomalies for long-run comparison.
 - Electron desktop launcher that starts the built frontend, FastAPI backend, and a native desktop window from a double-click entry.
 - Electron single-instance, tray restore, minimize-to-tray, and startup-log menu behavior for a more software-like local desktop experience.
 - Windows desktop shortcut installer scripts for desktop launching.
@@ -54,7 +55,7 @@ Most recent recorded validation:
 
 Known gaps after the implemented slice:
 
-- The project now has a local endurance runner with queue-depth and received-ratio thresholds, but still needs a true 30-60 minute live run with Redis, Whisper, and provider API keys.
+- The project now has a local endurance runner with queue-depth, received-ratio, and subtitle-order thresholds, but still needs a true 30-60 minute live run with Redis, Whisper, and provider API keys.
 - The project now has a secret-safe endurance preflight. The 2026-06-06 local preflight reached Redis and detected Whisper readiness, but the true 30-60 minute baseline is still blocked until a real `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` is configured.
 - Export coverage now includes TXT transcript, SRT subtitles, VTT subtitles, Markdown learning notes, diagnostics downloads, and unit tests for the formatter outputs; the new artifact formats still need real-session timing and readability validation.
 - Browser audio capture now defaults to `AudioWorklet`, diagnostics show the active backend, and unit tests cover main-path startup, fallback, and failed-capture cleanup; the path still needs real-session comparison against the ScriptProcessor fallback for chunk stability, dropped chunks, and latency.

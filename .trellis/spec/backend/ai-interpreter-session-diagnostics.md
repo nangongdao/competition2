@@ -252,7 +252,8 @@ python tools/endurance_runner.py \
   --url ws://localhost:8000/api/v1/ws/translate \
   --output reports/endurance-30m.json \
   --min-received-ratio 0.99 \
-  --max-queue-depth 8
+  --max-queue-depth 8 \
+  --max-subtitle-order-violations 0
 ```
 
 Core report helpers:
@@ -281,7 +282,12 @@ def validate_thresholds(report: dict[str, object], thresholds: Thresholds) -> No
   - server error messages
   - latest `session_diagnostics`
   - a summary of backend received/dropped chunks, segment counts, reconnects,
-    queue depth/capacity, received/sent chunk ratio, and latency stats
+    queue depth/capacity, received/sent chunk ratio, latency stats,
+    API/revision counters, and final-subtitle ordering anomalies
+  - `summary.subtitle_ordering.order_violation_count`, which combines duplicate
+    final subtitles, out-of-order final subtitles, final-sequence gaps, and
+    revisions that reference segments without a previously observed final
+    translation message
 
 ### 4. Validation & Error Matrix
 
@@ -298,6 +304,7 @@ def validate_thresholds(report: dict[str, object], thresholds: Thresholds) -> No
 | Reconnects exceed configured threshold | Raise a runner error and exit non-zero |
 | Backend received/sent chunk ratio is below configured threshold | Raise a runner error and exit non-zero |
 | Average latency exceeds configured threshold | Raise a runner error and exit non-zero |
+| Subtitle order violations exceed configured threshold | Raise a runner error and exit non-zero |
 
 ### 5. Good/Base/Bad Cases
 
@@ -314,7 +321,8 @@ def validate_thresholds(report: dict[str, object], thresholds: Thresholds) -> No
 
 - Unit tests for URL construction, PCM conversion, WAV looping, message
   recording, report summarization, queue-depth reporting, received-ratio
-  calculation, and threshold failures.
+  calculation, API/revision counter summaries, subtitle-order summaries, and
+  threshold failures.
 - `python -m unittest backend.test_endurance_runner`
 - `python -m compileall tools backend/test_endurance_runner.py`
 - A real reliability baseline still requires a live backend with Redis, Whisper,

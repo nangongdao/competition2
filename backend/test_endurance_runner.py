@@ -104,6 +104,10 @@ class EnduranceRunnerTests(unittest.TestCase):
             "audio_queue_max_depth": 2,
             "audio_queue_capacity": 16,
             "latency": {"capture_to_asr_ms": {"count": 1, "avg_ms": 120, "max_ms": 120}},
+            "api_call_counts": {"nmt_stream": 2, "translation_cache_hit": True},
+            "revision_counts": {"asr_correction": 1},
+            "revision_sources": {"audio_redecode": 1},
+            "revision_triggers": {"low_confidence": 1},
         }
         config = make_config()
 
@@ -124,6 +128,73 @@ class EnduranceRunnerTests(unittest.TestCase):
         self.assertEqual(summary["backend_audio_queue_capacity"], 16)
         self.assertEqual(summary["backend_received_ratio"], 1.0)
         self.assertEqual(summary["reconnect_count"], 0)
+        self.assertEqual(summary["api_call_counts"], {"nmt_stream": 2, "translation_cache_hit": 1})
+        self.assertEqual(summary["revision_counts"], {"asr_correction": 1})
+        self.assertEqual(summary["revision_sources"], {"audio_redecode": 1})
+        self.assertEqual(summary["revision_triggers"], {"low_confidence": 1})
+
+    def test_build_report_summarizes_clean_subtitle_ordering(self) -> None:
+        state = RunnerState()
+        record_message(
+            state,
+            {"type": "translation_token", "segment_id": "abc123ef_1", "is_final": True},
+        )
+        record_message(
+            state,
+            {"type": "translation_token", "segment_id": "abc123ef_2", "is_final": True},
+        )
+        report = build_report(
+            config=make_config(),
+            url="ws://localhost/session",
+            state=state,
+            started_at=10.0,
+            ended_at=12.0,
+        )
+
+        summary = report["summary"]
+        self.assertIsInstance(summary, dict)
+        ordering = summary["subtitle_ordering"]
+        self.assertIsInstance(ordering, dict)
+        self.assertEqual(ordering["translation_final_messages"], 2)
+        self.assertEqual(ordering["unique_final_segments"], 2)
+        self.assertEqual(ordering["order_violation_count"], 0)
+
+    def test_build_report_summarizes_subtitle_ordering_violations(self) -> None:
+        state = RunnerState()
+        for segment_id in ["abc123ef_1", "abc123ef_3", "abc123ef_2", "abc123ef_2"]:
+            record_message(
+                state,
+                {"type": "translation_token", "segment_id": segment_id, "is_final": True},
+            )
+        record_message(
+            state,
+            {"type": "translation_token", "segment_id": "not-parseable", "is_final": True},
+        )
+        record_message(
+            state,
+            {"type": "revision", "segment_id": "abc123ef_9", "new_text": "corrected"},
+        )
+        report = build_report(
+            config=make_config(),
+            url="ws://localhost/session",
+            state=state,
+            started_at=10.0,
+            ended_at=12.0,
+        )
+
+        summary = report["summary"]
+        self.assertIsInstance(summary, dict)
+        ordering = summary["subtitle_ordering"]
+        self.assertIsInstance(ordering, dict)
+        self.assertEqual(ordering["translation_final_messages"], 5)
+        self.assertEqual(ordering["unique_final_segments"], 4)
+        self.assertEqual(ordering["duplicate_final_segments"], 1)
+        self.assertEqual(ordering["out_of_order_final_segments"], 1)
+        self.assertEqual(ordering["final_sequence_gap_events"], 1)
+        self.assertEqual(ordering["missing_final_segment_estimate"], 1)
+        self.assertEqual(ordering["revisions_for_unknown_segments"], 1)
+        self.assertEqual(ordering["unparseable_final_segments"], 1)
+        self.assertEqual(ordering["order_violation_count"], 4)
 
     def test_validate_thresholds_raises_for_dropped_chunks(self) -> None:
         report = {
@@ -187,6 +258,28 @@ class EnduranceRunnerTests(unittest.TestCase):
                     max_reconnects=None,
                     max_latency_ms=None,
                     min_received_ratio=0.95,
+                ),
+            )
+
+    def test_validate_thresholds_raises_for_subtitle_order_violations(self) -> None:
+        report = {
+            "summary": {
+                "subtitle_ordering": {
+                    "order_violation_count": 2,
+                },
+            },
+        }
+
+        with self.assertRaises(EnduranceRunnerError):
+            validate_thresholds(
+                report,
+                Thresholds(
+                    max_dropped_chunks=None,
+                    max_queue_depth=None,
+                    max_reconnects=None,
+                    max_latency_ms=None,
+                    min_received_ratio=None,
+                    max_subtitle_order_violations=1,
                 ),
             )
 

@@ -19,6 +19,7 @@ from pathlib import Path
 import struct
 import sys
 import time
+from typing import TypeVar
 import uuid
 import wave
 
@@ -33,6 +34,7 @@ DEFAULT_SAMPLE_RATE = 16000
 DEFAULT_RECEIVE_TIMEOUT_SECONDS = 2.0
 DEFAULT_OUTPUT_PATH = Path("reports/endurance-latest.json")
 MANUAL_REVISE_MESSAGE = json.dumps({"type": "manual_revise"})
+SampleT = TypeVar("SampleT")
 
 
 class EnduranceRunnerError(RuntimeError):
@@ -46,6 +48,7 @@ class Thresholds:
     max_reconnects: int | None
     max_latency_ms: int | None
     min_received_ratio: float | None
+    max_subtitle_order_violations: int | None = None
 
 
 @dataclass(frozen=True)
@@ -75,6 +78,20 @@ class RunnerState:
     latest_diagnostics: dict[str, object] | None = None
     first_message_at: float | None = None
     last_message_at: float | None = None
+    translation_final_messages: int = 0
+    finalized_segment_ids: set[str] = field(default_factory=set)
+    duplicate_final_segments: int = 0
+    duplicate_final_segment_ids: list[str] = field(default_factory=list)
+    out_of_order_final_segments: int = 0
+    out_of_order_final_segment_ids: list[str] = field(default_factory=list)
+    final_sequence_gap_events: int = 0
+    missing_final_segment_estimate: int = 0
+    final_sequence_gap_samples: list[dict[str, object]] = field(default_factory=list)
+    unparseable_final_segments: int = 0
+    unparseable_final_segment_ids: list[str] = field(default_factory=list)
+    revisions_for_unknown_segments: int = 0
+    unknown_revision_segment_ids: list[str] = field(default_factory=list)
+    last_final_sequence: int | None = None
 
 
 class GeneratedAudioSource:
@@ -225,6 +242,66 @@ def record_message(state: RunnerState, message: dict[str, object]) -> None:
         diagnostics = message.get("diagnostics")
         if isinstance(diagnostics, dict):
             state.latest_diagnostics = diagnostics
+
+    if message_type == "translation_token" and message.get("is_final") is True:
+        segment_id = message.get("segment_id")
+        if isinstance(segment_id, str):
+            record_final_translation_segment(state, segment_id)
+
+    if message_type == "revision":
+        segment_id = message.get("segment_id")
+        if isinstance(segment_id, str) and segment_id not in state.finalized_segment_ids:
+            state.revisions_for_unknown_segments += 1
+            append_sample(state.unknown_revision_segment_ids, segment_id)
+
+
+def record_final_translation_segment(state: RunnerState, segment_id: str) -> None:
+    state.translation_final_messages += 1
+    if segment_id in state.finalized_segment_ids:
+        state.duplicate_final_segments += 1
+        append_sample(state.duplicate_final_segment_ids, segment_id)
+        return
+
+    state.finalized_segment_ids.add(segment_id)
+    sequence = segment_sequence(segment_id)
+    if sequence is None:
+        state.unparseable_final_segments += 1
+        append_sample(state.unparseable_final_segment_ids, segment_id)
+        return
+
+    previous_sequence = state.last_final_sequence
+    if previous_sequence is not None:
+        if sequence <= previous_sequence:
+            state.out_of_order_final_segments += 1
+            append_sample(state.out_of_order_final_segment_ids, segment_id)
+        elif sequence > previous_sequence + 1:
+            missing_count = sequence - previous_sequence - 1
+            state.final_sequence_gap_events += 1
+            state.missing_final_segment_estimate += missing_count
+            append_sample(
+                state.final_sequence_gap_samples,
+                {
+                    "previous_sequence": previous_sequence,
+                    "current_sequence": sequence,
+                    "missing_count": missing_count,
+                    "segment_id": segment_id,
+                },
+            )
+
+    if previous_sequence is None or sequence > previous_sequence:
+        state.last_final_sequence = sequence
+
+
+def segment_sequence(segment_id: str) -> int | None:
+    _prefix, separator, suffix = segment_id.rpartition("_")
+    if not separator or not suffix.isdigit():
+        return None
+    return int(suffix)
+
+
+def append_sample(samples: list[SampleT], value: SampleT, *, limit: int = 20) -> None:
+    if len(samples) < limit:
+        samples.append(value)
 
 
 async def receive_messages(websocket, state: RunnerState, stop_event: asyncio.Event) -> None:
@@ -384,6 +461,11 @@ def build_report(
             "revision_segments": int_value(diagnostics.get("revision_segments")),
             "reconnect_count": int_value(diagnostics.get("reconnect_count")),
             "latency": diagnostics.get("latency", {}),
+            "api_call_counts": numeric_mapping(diagnostics.get("api_call_counts")),
+            "revision_counts": numeric_mapping(diagnostics.get("revision_counts")),
+            "revision_sources": numeric_mapping(diagnostics.get("revision_sources")),
+            "revision_triggers": numeric_mapping(diagnostics.get("revision_triggers")),
+            "subtitle_ordering": build_subtitle_ordering_summary(state),
         },
     }
 
@@ -412,6 +494,41 @@ def float_value(value: object) -> float:
     if isinstance(value, int | float):
         return float(value)
     return 0.0
+
+
+def numeric_mapping(value: object) -> dict[str, int]:
+    if not isinstance(value, dict):
+        return {}
+    result: dict[str, int] = {}
+    for key, item in value.items():
+        if isinstance(key, str):
+            result[key] = int_value(item)
+    return dict(sorted(result.items()))
+
+
+def build_subtitle_ordering_summary(state: RunnerState) -> dict[str, object]:
+    order_violation_count = (
+        state.duplicate_final_segments
+        + state.out_of_order_final_segments
+        + state.final_sequence_gap_events
+        + state.revisions_for_unknown_segments
+    )
+    return {
+        "translation_final_messages": state.translation_final_messages,
+        "unique_final_segments": len(state.finalized_segment_ids),
+        "order_violation_count": order_violation_count,
+        "duplicate_final_segments": state.duplicate_final_segments,
+        "duplicate_final_segment_ids": state.duplicate_final_segment_ids,
+        "out_of_order_final_segments": state.out_of_order_final_segments,
+        "out_of_order_final_segment_ids": state.out_of_order_final_segment_ids,
+        "final_sequence_gap_events": state.final_sequence_gap_events,
+        "missing_final_segment_estimate": state.missing_final_segment_estimate,
+        "final_sequence_gap_samples": state.final_sequence_gap_samples,
+        "revisions_for_unknown_segments": state.revisions_for_unknown_segments,
+        "unknown_revision_segment_ids": state.unknown_revision_segment_ids,
+        "unparseable_final_segments": state.unparseable_final_segments,
+        "unparseable_final_segment_ids": state.unparseable_final_segment_ids,
+    }
 
 
 def validate_thresholds(report: dict[str, object], thresholds: Thresholds) -> None:
@@ -452,6 +569,16 @@ def validate_thresholds(report: dict[str, object], thresholds: Thresholds) -> No
                 avg_ms = int_value(value.get("avg_ms"))
                 if avg_ms > thresholds.max_latency_ms:
                     failures.append(f"{name} avg {avg_ms}ms > {thresholds.max_latency_ms}ms")
+
+    if thresholds.max_subtitle_order_violations is not None:
+        subtitle_ordering = summary.get("subtitle_ordering")
+        if isinstance(subtitle_ordering, dict):
+            order_violations = int_value(subtitle_ordering.get("order_violation_count"))
+            if order_violations > thresholds.max_subtitle_order_violations:
+                failures.append(
+                    "subtitle order violations "
+                    f"{order_violations} > {thresholds.max_subtitle_order_violations}",
+                )
 
     if failures:
         raise EnduranceRunnerError("; ".join(failures))
@@ -500,6 +627,15 @@ def parse_args(argv: list[str] | None = None) -> RunnerConfig:
     parser.add_argument("--max-reconnects", type=int, default=None)
     parser.add_argument("--max-latency-ms", type=int, default=None)
     parser.add_argument(
+        "--max-subtitle-order-violations",
+        type=int,
+        default=None,
+        help=(
+            "Fail if final subtitle ordering shows more duplicate, out-of-order, "
+            "gap, or unknown-revision events than this value."
+        ),
+    )
+    parser.add_argument(
         "--min-received-ratio",
         type=float,
         default=None,
@@ -513,6 +649,11 @@ def parse_args(argv: list[str] | None = None) -> RunnerConfig:
         raise EnduranceRunnerError("Manual revision interval cannot be negative.")
     if args.max_queue_depth is not None and args.max_queue_depth < 0:
         raise EnduranceRunnerError("Maximum queue depth cannot be negative.")
+    if (
+        args.max_subtitle_order_violations is not None
+        and args.max_subtitle_order_violations < 0
+    ):
+        raise EnduranceRunnerError("Maximum subtitle order violations cannot be negative.")
     if args.min_received_ratio is not None and not 0 <= args.min_received_ratio <= 1:
         raise EnduranceRunnerError("Minimum received ratio must be between 0 and 1.")
 
@@ -534,6 +675,7 @@ def parse_args(argv: list[str] | None = None) -> RunnerConfig:
             max_reconnects=args.max_reconnects,
             max_latency_ms=args.max_latency_ms,
             min_received_ratio=args.min_received_ratio,
+            max_subtitle_order_violations=args.max_subtitle_order_violations,
         ),
     )
 
