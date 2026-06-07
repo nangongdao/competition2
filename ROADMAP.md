@@ -28,6 +28,8 @@ Implemented capabilities now include:
 - Endurance runner reports can optionally sample runner/backend process RSS memory, summarize start/end/peak/growth values, and fail on memory-growth thresholds.
 - Subtitle artifact validation tooling now checks TXT/SRT/VTT/Markdown exports for empty output, cue counts, timestamp overlaps, long gaps, revision markers, transcript counts, and Markdown timeline readability.
 - Unified interpreter validation suite now coordinates preflight, optional endurance runs, and optional subtitle artifact checks into one report for real-session acceptance evidence.
+- Web-first local launcher that starts the built frontend, FastAPI backend, and
+  default browser from a double-click entry without requiring Electron.
 - Electron desktop launcher that starts the built frontend, FastAPI backend, and a native desktop window from a double-click entry.
 - Desktop launcher backend startup now avoids unhealthy occupied backend ports,
   injects the actual runtime WebSocket URL into Electron, and defaults desktop
@@ -36,9 +38,9 @@ Implemented capabilities now include:
 - Electron transparent always-on-top floating subtitle overlay so desktop users
   can view translations over other apps while using the main window as the
   control panel.
-- Electron desktop settings panel now stores local provider/model/API-key
-  settings in a Git-ignored settings file, exposes only key presence to the
-  renderer, injects settings through the launcher on startup, and supports
+- Local browser/Electron settings panel now stores local provider/model/API-key
+  settings in a Git-ignored settings file, exposes only key presence to the UI,
+  injects settings through the launcher on startup, and supports
   Chinese/English interface language switching.
 - Windows desktop shortcut installer scripts for desktop launching.
 - Durable subtitle history that is separate from the visible subtitle list.
@@ -76,7 +78,7 @@ Known gaps after the implemented slice:
 - The project now has a secret-safe endurance preflight. The 2026-06-06 local preflight reached Redis and detected Whisper readiness, but the true 30-60 minute baseline is still blocked until a real `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` is configured.
 - Export coverage now includes TXT transcript, SRT subtitles, VTT subtitles, Markdown learning notes, diagnostics downloads, unit tests for the formatter outputs, and an artifact validator; the exported files still need real-session timing and readability validation with captured session content.
 - Browser audio capture now defaults to `AudioWorklet`, diagnostics show the active backend, and unit tests cover main-path startup, fallback, and failed-capture cleanup; the path still needs real-session comparison against the ScriptProcessor fallback for chunk stability, dropped chunks, and latency.
-- Production-grade/provider-backed Chinese TTS playback and full desktop/system-audio capture remain intentionally deferred until the browser flow has measurable stability. The current local voice path is browser/Electron Web Speech playback, and the current desktop launcher now includes a floating subtitle surface, but it is still not a packaged system-audio capture client.
+- Production-grade/provider-backed Chinese TTS playback and full desktop/system-audio capture remain intentionally deferred until the web flow has measurable stability. The current local voice path is browser/Electron Web Speech playback, browser startup is now the recommended local path, and the optional Electron launcher includes a floating subtitle surface, but it is still not a packaged system-audio capture client.
 
 ## Priority Improvement Directions - 2026-06-06
 
@@ -86,7 +88,7 @@ The next roadmap slice should make the existing V2 workflow measurable and depen
 2. **Export validation and artifact refinement**: validate SRT/VTT timing, revised-segment markers, Markdown note readability, and unchanged TXT/diagnostics behavior in real sessions with `tools/interpreter_validation_suite.py --artifact ...` or `tools/subtitle_artifact_validator.py`.
 3. **Browser audio-capture validation**: validate the AudioWorklet capture path in real sessions and compare the recorded capture backend, chunk stability, dropped chunks, and latency against the ScriptProcessor fallback.
 4. **Chinese TTS playback**: validate the local Web Speech TTS slice in real sessions, including queue behavior, revised-segment handling, browser/Electron voice availability, and whether provider-backed synthesis is needed for consistent output.
-5. **Desktop overlay and system-audio capture**: validate the Electron floating subtitle overlay in real sessions for click-through behavior, z-order, fullscreen behavior, DPI, and multi-monitor placement. Keep full desktop/system-audio capture deferred until the browser workflow is stable, then evaluate Electron/Tauri using real requirements for capture, packaging size, memory usage, and cross-platform support.
+5. **Web-first startup and optional desktop overlay**: use `start-web.cmd` for local demos and reliability runs. Keep Electron floating subtitle overlay validation optional for click-through behavior, z-order, fullscreen behavior, DPI, and multi-monitor placement. Keep full desktop/system-audio capture deferred until the browser workflow is stable, then evaluate Electron/Tauri using real requirements for capture, packaging size, memory usage, and cross-platform support.
 6. **Later expansion**: keep multi-language input, glossary support, and learning-assistant features behind the reliability/export/TTS work so core live interpretation quality remains the priority.
 
 ---

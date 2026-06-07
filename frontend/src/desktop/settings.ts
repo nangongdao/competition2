@@ -1,4 +1,5 @@
 import { getDesktopBridge } from './overlay'
+import { getRuntimeWebSocketUrlFromSearch } from '../network/ws-url'
 import type {
   DesktopAsrProfile,
   DesktopSettingsSaveResult,
@@ -9,6 +10,8 @@ import type {
   UiLanguage,
 } from '../types'
 
+
+const LOCAL_SETTINGS_API_PATH = '/api/v1/settings/local'
 
 export const DEFAULT_DESKTOP_SETTINGS: DesktopSettingsSnapshot = {
   available: false,
@@ -27,6 +30,15 @@ export const DEFAULT_DESKTOP_SETTINGS: DesktopSettingsSnapshot = {
 }
 
 
+type BrowserSettingsFetcher = (input: string, init?: RequestInit) => Promise<Response>
+
+
+interface BrowserSettingsRequestOptions {
+  endpoint?: string
+  fetcher?: BrowserSettingsFetcher
+}
+
+
 export function createUnavailableDesktopSettings(): DesktopSettingsSnapshot {
   return {
     ...DEFAULT_DESKTOP_SETTINGS,
@@ -39,7 +51,7 @@ export function createUnavailableDesktopSettings(): DesktopSettingsSnapshot {
 export async function loadDesktopSettings(): Promise<DesktopSettingsSnapshot> {
   const bridge = getDesktopBridge()
   if (!bridge?.getSettings) {
-    return createUnavailableDesktopSettings()
+    return loadBrowserLocalSettings()
   }
 
   try {
@@ -47,7 +59,7 @@ export async function loadDesktopSettings(): Promise<DesktopSettingsSnapshot> {
     return sanitizeDesktopSettingsSnapshot(settings)
   } catch (error) {
     console.warn('[desktop-settings] failed to load settings', error)
-    return createUnavailableDesktopSettings()
+    return loadBrowserLocalSettings()
   }
 }
 
@@ -57,10 +69,7 @@ export async function saveDesktopSettings(
 ): Promise<DesktopSettingsSaveResult> {
   const bridge = getDesktopBridge()
   if (!bridge?.saveSettings) {
-    return {
-      success: false,
-      reason: 'desktop settings unavailable',
-    }
+    return saveBrowserLocalSettings(update)
   }
 
   try {
@@ -74,10 +83,103 @@ export async function saveDesktopSettings(
     return result
   } catch (error) {
     console.warn('[desktop-settings] failed to save settings', error)
+    return saveBrowserLocalSettings(update)
+  }
+}
+
+
+export async function loadBrowserLocalSettings(
+  options: BrowserSettingsRequestOptions = {},
+): Promise<DesktopSettingsSnapshot> {
+  const fetcher = options.fetcher ?? getDefaultFetcher()
+  if (!fetcher) {
+    return createUnavailableDesktopSettings()
+  }
+
+  try {
+    const response = await fetcher(options.endpoint ?? resolveLocalSettingsEndpoint(), {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+      },
+    })
+    if (!response.ok) {
+      return createUnavailableDesktopSettings()
+    }
+
+    return sanitizeSettingsLoadResult(await response.json())
+  } catch (error) {
+    console.warn('[browser-settings] failed to load settings', error)
+    return createUnavailableDesktopSettings()
+  }
+}
+
+
+export async function saveBrowserLocalSettings(
+  update: DesktopSettingsUpdate,
+  options: BrowserSettingsRequestOptions = {},
+): Promise<DesktopSettingsSaveResult> {
+  const fetcher = options.fetcher ?? getDefaultFetcher()
+  if (!fetcher) {
     return {
       success: false,
-      reason: 'desktop settings save failed',
+      reason: 'browser settings unavailable',
     }
+  }
+
+  try {
+    const response = await fetcher(options.endpoint ?? resolveLocalSettingsEndpoint(), {
+      method: 'PUT',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(update),
+    })
+    if (!response.ok) {
+      return {
+        success: false,
+        reason: 'browser settings save failed',
+      }
+    }
+
+    return sanitizeSettingsSaveResult(await response.json())
+  } catch (error) {
+    console.warn('[browser-settings] failed to save settings', error)
+    return {
+      success: false,
+      reason: 'browser settings save failed',
+    }
+  }
+}
+
+
+export function resolveLocalSettingsEndpoint(search?: string): string {
+  const locationSearch = search ?? (typeof window === 'undefined' ? '' : window.location.search)
+  const runtimeWebSocketUrl = getRuntimeWebSocketUrlFromSearch(locationSearch)
+  return createSettingsApiUrlFromWebSocketUrl(runtimeWebSocketUrl) ?? LOCAL_SETTINGS_API_PATH
+}
+
+
+export function createSettingsApiUrlFromWebSocketUrl(value: string | null | undefined): string | null {
+  const trimmedValue = value?.trim() ?? ''
+  if (!trimmedValue) {
+    return null
+  }
+
+  try {
+    const url = new URL(trimmedValue)
+    if (url.protocol !== 'ws:' && url.protocol !== 'wss:') {
+      return null
+    }
+
+    url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:'
+    url.pathname = LOCAL_SETTINGS_API_PATH
+    url.search = ''
+    url.hash = ''
+    return url.toString()
+  } catch {
+    return null
   }
 }
 
@@ -119,6 +221,47 @@ export function sanitizeDesktopSettingsSnapshot(
       ),
     },
   }
+}
+
+
+function sanitizeSettingsLoadResult(value: unknown): DesktopSettingsSnapshot {
+  if (!isRecord(value) || value.success !== true) {
+    return createUnavailableDesktopSettings()
+  }
+
+  return sanitizeDesktopSettingsSnapshot(value.settings)
+}
+
+
+function sanitizeSettingsSaveResult(value: unknown): DesktopSettingsSaveResult {
+  if (!isRecord(value)) {
+    return {
+      success: false,
+      reason: 'browser settings save failed',
+    }
+  }
+
+  if (value.success === true) {
+    return {
+      success: true,
+      reason: typeof value.reason === 'string' ? value.reason : 'browser settings saved',
+      settings: sanitizeDesktopSettingsSnapshot(value.settings),
+    }
+  }
+
+  return {
+    success: false,
+    reason: typeof value.reason === 'string' ? value.reason : 'browser settings save failed',
+  }
+}
+
+
+function getDefaultFetcher(): BrowserSettingsFetcher | null {
+  if (typeof globalThis.fetch !== 'function') {
+    return null
+  }
+
+  return globalThis.fetch.bind(globalThis)
 }
 
 

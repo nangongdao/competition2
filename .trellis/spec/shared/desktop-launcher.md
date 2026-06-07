@@ -1,7 +1,9 @@
-# Desktop Launcher Contract
+# Local Launcher Contract
 
-This project uses an Electron desktop launcher for the current local demo
-workflow. The launcher is a real desktop window, not a browser app-mode tab.
+This project uses a web-first local launcher for the default local demo
+workflow, with an optional Electron desktop launcher for transparent floating
+subtitles. Both launch modes share the same frontend build, static server,
+backend startup, local settings file, and runtime WebSocket URL injection.
 
 ## Scenario: Desktop-Style Local Startup
 
@@ -20,9 +22,11 @@ workflow. The launcher is a real desktop window, not a browser app-mode tab.
 ```bash
 start-desktop.cmd
 powershell.exe -File start-desktop.ps1
+start-web.cmd
+powershell.exe -File start-web.ps1
 install-desktop-shortcut.cmd
 powershell.exe -File install-desktop-shortcut.ps1
-python tools/desktop_launcher.py [--build] [--backend-port PORT] [--frontend-port PORT] [--asr-profile PROFILE] [--no-splash]
+python tools/desktop_launcher.py [--mode desktop|web] [--build] [--backend-port PORT] [--frontend-port PORT] [--asr-profile PROFILE] [--no-splash]
 npm run desktop:window --prefix frontend
 ```
 
@@ -36,14 +40,22 @@ def start_backend(port: int, asr_profile: str, desktop_settings: DesktopSettings
 def start_frontend_server(port: int) -> tuple[http.server.ThreadingHTTPServer, str]: ...
 def ensure_desktop_runtime() -> Path: ...
 def launch_desktop_window(url: str, backend_ws_url: str) -> subprocess.Popen[str]: ...
+def launch_web_browser(url: str, backend_ws_url: str) -> str: ...
+def wait_for_web_session(app_url: str) -> None: ...
 ```
 
 ### 3. Contracts
 
 - `start-desktop.cmd` must be safe to double-click from Windows Explorer and
   should not leave a visible terminal window open.
+- `start-web.cmd` must be safe to double-click from Windows Explorer and should
+  leave a visible console window open so the user can stop launcher-owned
+  services with `Ctrl+C` or by closing that window.
 - `start-desktop.ps1` should prefer `backend/.venv/Scripts/pythonw.exe`, then
   `backend/.venv/Scripts/python.exe`, then `python`.
+- `start-web.ps1` should prefer `backend/.venv/Scripts/python.exe`, then
+  `python`; it must not use `pythonw.exe` because web mode needs a visible
+  lifecycle console.
 - `tools/desktop_launcher.py --build` must run the frontend production build
   before serving `frontend/dist`.
 - The launcher serves `frontend/dist` from `127.0.0.1` on an available port by
@@ -53,8 +65,11 @@ def launch_desktop_window(url: str, backend_ws_url: str) -> subprocess.Popen[str
 - If the requested backend port is occupied but not healthy, the launcher must
   select another available local port. It must not kill or reset an unknown
   process that owns the requested port.
-- The launcher must pass the actual backend WebSocket URL to the Electron
-  frontend at runtime so the renderer connects to the selected backend port.
+- The launcher must pass the actual backend WebSocket URL to the frontend at
+  runtime so the browser/Electron renderer connects to the selected backend
+  port.
+- In web mode, the launcher opens the default browser with the runtime `wsUrl`
+  query parameter and then waits until the user stops the console session.
 - The launcher opens Electron with `AI_INTERPRETER_DESKTOP_URL=<frontend-url>`.
 - The launcher opens Electron with `AI_INTERPRETER_LOG_FILE=<log-path>` so the
   tray menu can open startup diagnostics.
@@ -142,9 +157,10 @@ Local desktop settings keys:
   the floating subtitle overlay without stopping the translation session.
 - Browser-only startup must keep the existing in-page subtitle renderer as the
   fallback path when `window.aiInterpreterDesktop` is unavailable.
-- Browser-only startup must keep the settings panel safe: local desktop settings
-  read/write controls are disabled or reported unavailable when the preload
-  bridge is absent.
+- Browser-only startup must keep the settings panel safe: when the preload
+  bridge is absent, the frontend may read/write local settings only through the
+  local backend settings API. If that API is unavailable, controls are disabled
+  or reported unavailable.
 - The overlay should use the primary display work area for MVP positioning and
   reposition when display metrics change.
 
@@ -158,7 +174,8 @@ Local desktop settings keys:
 | User restores overlay | Overlay window reappears without reconnecting the backend session |
 | Main window closes | Overlay window closes and launcher cleanup proceeds normally |
 | Display metrics change | Overlay bounds are refreshed to the primary work area |
-| Browser mode opens settings | Settings panel reports desktop settings unavailable and does not crash |
+| Browser mode opens settings with backend API available | Settings panel loads/saves local settings through the backend API and does not expose saved key values |
+| Browser mode opens settings without backend API | Settings panel reports local settings unavailable and does not crash |
 | Saved API key exists | Renderer shows configured/missing state, not the raw saved key |
 | User leaves key field blank | Electron preserves the existing saved key |
 | User clears key | Electron writes an empty key value to the local settings file |
@@ -197,6 +214,8 @@ Local desktop settings keys:
 
 ### 5. Good/Base/Bad Cases
 
+- Good: double-click `start-web.cmd`, local services start, the default browser
+  opens with a runtime `wsUrl`, and the console explains how to stop services.
 - Good: double-click `start-desktop.cmd`, a splash appears, local services start,
   and an Electron desktop window opens without a terminal window.
 - Base: backend is already running on `127.0.0.1:8000`; launcher serves frontend
@@ -206,7 +225,8 @@ Local desktop settings keys:
 - Good: minimize the Electron window, restore it from the tray, and quit from
   the tray when done.
 - Bad: launcher always kills port `8000` on exit, assumes a hard-coded browser
-  path, or opens a normal browser tab/app-mode window as the primary path.
+  path, or opens a browser URL without injecting the selected backend WebSocket
+  URL.
 
 ### 6. Tests Required
 
@@ -225,8 +245,11 @@ Local desktop settings keys:
   `index.html`, public assets, or `import.meta.env` usage.
 - Run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File
   install-desktop-shortcut.ps1` when validating shortcut creation manually.
-- For a manual smoke test, run `start-desktop.cmd`, verify the Electron window
-  opens, then close it and confirm launcher-owned backend/static services stop.
+- For a manual web smoke test, run `start-web.cmd`, verify the browser opens,
+  settings can load, and `Ctrl+C` stops launcher-owned backend/static services.
+- For a manual desktop smoke test, run `start-desktop.cmd`, verify the Electron
+  window opens, then close it and confirm launcher-owned backend/static services
+  stop.
 
 ### 7. Wrong vs Correct
 

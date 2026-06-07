@@ -33,14 +33,16 @@ Implemented product capabilities now include:
 - Unified interpreter validation suite that coordinates preflight, optional
   endurance runs, and optional subtitle artifact checks into one audit report.
 - Secret-safe endurance preflight for checking Redis, Whisper, CUDA, and provider key readiness before long runs.
-- Electron desktop launcher that starts the built frontend, FastAPI backend, and a native desktop window from a double-click entry.
+- Web-first local launcher that starts the built frontend, FastAPI backend, and
+  default browser from a double-click entry without requiring Electron.
+- Optional Electron desktop launcher that starts the built frontend, FastAPI backend, and a native desktop window from a double-click entry.
 - Electron single-instance, tray restore, minimize-to-tray, and startup-log menu behavior for a more software-like local desktop experience.
 - Electron floating subtitle overlay that opens a transparent always-on-top
   subtitle window above other desktop apps while the main window remains the
   control panel.
-- Desktop settings panel for local provider/model/API-key configuration, with
-  Chinese/English interface language switching and a Git-ignored local settings
-  file.
+- Local settings panel for browser/Electron provider/model/API-key configuration,
+  with Chinese/English interface language switching and a Git-ignored local
+  settings file.
 - Windows desktop shortcut installer scripts for launching the app from the desktop.
 - Durable subtitle history separated from the short visible subtitle list.
 - Transcript copy and TXT download from the subtitle history panel.
@@ -84,11 +86,67 @@ Recommended improvement sequence:
 2. Validate post-session artifacts in real sessions with `tools/subtitle_artifact_validator.py`: confirm SRT/VTT timing, revised-segment markers, Markdown note readability, and unchanged TXT/diagnostics behavior while keeping the frontend export unit tests green.
 3. Validate the new AudioWorklet capture path in real sessions and compare chunk stability, dropped chunks, and latency against the ScriptProcessor fallback.
 4. Validate the local Web Speech voice playback in real browser/Electron sessions, then decide whether the next TTS slice needs provider-backed synthesis, audio artifact caching, or backend delivery.
-5. Keep the Electron desktop launcher for local demos, but defer full packaged desktop/system-audio capture until the browser workflow has measurable stability. At that point, evaluate Electron/Tauri capture, packaging, and memory requirements against real sessions.
+5. Use the web launcher as the default local demo path. Keep Electron only as
+   the optional floating-overlay path, and defer full packaged desktop/system-audio
+   capture until the browser workflow has measurable stability. At that point,
+   evaluate Electron/Tauri capture, packaging, and memory requirements against
+   real sessions.
 
-## Desktop-Style Startup
+## Web Startup (Recommended)
 
-On Windows, double-click `start-desktop.cmd` from the project root. The launcher:
+On Windows, double-click `start-web.cmd` from the project root. The web
+launcher:
+
+1. Builds the Vite frontend when needed.
+2. Serves the built frontend from a local static server.
+3. Starts the FastAPI backend from `backend/.venv` when the requested backend
+   port is not already healthy.
+4. Opens the app in the default browser with the selected backend WebSocket URL.
+5. Keeps a console window open while launcher-owned services are running. Press
+   `Ctrl+C` or close that window to stop those services.
+
+Use `Settings` / `设置` in the web page to configure provider/model/API-key
+values without editing secret files by hand. Browser settings are saved through
+the local backend to `config/desktop-settings.local.json`, which is ignored by
+Git. The tracked `config/desktop-settings.example.json` file remains the
+GitHub-safe template with the same shape and no real key. The browser only
+receives whether a saved key exists; it does not display stored key values.
+
+Backend-affecting settings such as translation engine, model, API key, base URL,
+and ASR profile are read when the backend starts, so restart `start-web.cmd` or
+the backend after saving them. Interface language changes apply in the frontend
+immediately after saving.
+
+In web mode, live subtitles appear inside the AI Interpreter web page. This mode
+does not inject subtitles into the original video page and does not create an
+OS-level transparent floating subtitle layer. Use browser tab/system-audio
+sharing when available, or place the AI Interpreter page beside the original
+video page. The transparent always-on-top overlay is still Electron-only.
+
+Startup logs are written to `logs/desktop-launcher.log`. If port `8000` is
+occupied by an unhealthy or stale process, the launcher chooses another local
+backend port and injects the matching WebSocket URL into the browser page.
+Override paths, ports, or ASR profile with `AI_INTERPRETER_PYTHON`,
+`AI_INTERPRETER_BACKEND_PORT`, `AI_INTERPRETER_FRONTEND_PORT`, or
+`AI_INTERPRETER_DESKTOP_ASR_PROFILE` when needed.
+
+Web startup defaults to a low-resource ASR profile:
+
+```text
+WHISPER_MODEL=small
+WHISPER_DEVICE=cpu
+WHISPER_COMPUTE_TYPE=int8
+```
+
+Set `AI_INTERPRETER_DESKTOP_ASR_PROFILE=env` to use the ASR values from
+`backend/.env.local` exactly, or `AI_INTERPRETER_DESKTOP_ASR_PROFILE=gpu` to
+prefer `large-v3` on CUDA when your machine has enough VRAM.
+
+## Desktop-Style Startup (Optional)
+
+Use this path only when you specifically need the Electron transparent floating
+subtitle overlay. On Windows, double-click `start-desktop.cmd` from the project
+root. The launcher:
 
 1. Builds the Vite frontend when needed.
 2. Serves the built frontend from a local static server.
@@ -106,7 +164,7 @@ in the floating overlay near the bottom of the screen, not only inside the main
 window. The control panel button `Floating subtitles on/off` and the tray menu
 can hide or restore the overlay without stopping the translation session.
 
-Use `Settings` / `设置` in the control window to configure the desktop app
+Use `Settings` / `设置` in the control window to configure the local app
 without editing secret files by hand. The panel can save:
 
 - Interface language: Chinese or English.
@@ -122,8 +180,8 @@ receives whether a saved key exists; it does not display the stored key value.
 
 Backend-affecting settings such as translation engine, model, API key, base URL,
 and ASR profile are read by the Python launcher when the backend starts, so
-restart the desktop app after saving them. Interface language changes apply in
-the frontend immediately after saving.
+restart the local launcher after saving them. Interface language changes apply
+in the frontend immediately after saving.
 
 Startup logs are written to `logs/desktop-launcher.log`. If port `8000` is
 occupied by an unhealthy or stale process, the launcher chooses another local

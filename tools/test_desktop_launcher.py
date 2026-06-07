@@ -198,6 +198,85 @@ class DesktopLauncherTests(unittest.TestCase):
             ),
         )
 
+    def test_create_frontend_app_url_injects_backend_ws_query_param(self) -> None:
+        url = desktop_launcher.create_frontend_app_url(
+            "http://127.0.0.1:4500/",
+            "ws://127.0.0.1:8123/api/v1/ws/translate",
+        )
+
+        self.assertEqual(
+            url,
+            (
+                "http://127.0.0.1:4500/?"
+                "wsUrl=ws%3A%2F%2F127.0.0.1%3A8123%2Fapi%2Fv1%2Fws%2Ftranslate"
+            ),
+        )
+
+    def test_launch_web_browser_opens_default_browser(self) -> None:
+        with (
+            patch.object(desktop_launcher.webbrowser, "open", return_value=True) as open_browser,
+            patch.object(desktop_launcher, "write_log"),
+        ):
+            app_url = desktop_launcher.launch_web_browser(
+                "http://127.0.0.1:4500/",
+                "ws://127.0.0.1:8123/api/v1/ws/translate",
+            )
+
+        self.assertEqual(
+            app_url,
+            (
+                "http://127.0.0.1:4500/?"
+                "wsUrl=ws%3A%2F%2F127.0.0.1%3A8123%2Fapi%2Fv1%2Fws%2Ftranslate"
+            ),
+        )
+        open_browser.assert_called_once_with(app_url, new=2)
+
+    def test_main_web_mode_does_not_launch_electron(self) -> None:
+        class FakeServer:
+            def __init__(self) -> None:
+                self.is_shutdown = False
+                self.is_closed = False
+
+            def shutdown(self) -> None:
+                self.is_shutdown = True
+
+            def server_close(self) -> None:
+                self.is_closed = True
+
+        fake_server = FakeServer()
+
+        with (
+            patch.object(desktop_launcher.sys, "argv", ["desktop_launcher.py", "--mode", "web", "--no-splash"]),
+            patch.object(desktop_launcher, "reset_log"),
+            patch.object(desktop_launcher, "write_log"),
+            patch.object(desktop_launcher, "load_desktop_settings", return_value=desktop_launcher.DesktopSettings()),
+            patch.object(desktop_launcher, "ensure_frontend_build"),
+            patch.object(
+                desktop_launcher,
+                "start_frontend_server",
+                return_value=(fake_server, "http://127.0.0.1:4500/"),
+            ),
+            patch.object(desktop_launcher, "resolve_backend_port", return_value=8123),
+            patch.object(desktop_launcher, "start_backend", return_value=None),
+            patch.object(
+                desktop_launcher,
+                "launch_web_browser",
+                return_value="http://127.0.0.1:4500/?wsUrl=runtime",
+            ) as launch_web_browser,
+            patch.object(desktop_launcher, "wait_for_web_session"),
+            patch.object(desktop_launcher, "launch_desktop_window") as launch_desktop_window,
+        ):
+            result = desktop_launcher.main()
+
+        self.assertEqual(result, 0)
+        self.assertTrue(fake_server.is_shutdown)
+        self.assertTrue(fake_server.is_closed)
+        launch_web_browser.assert_called_once_with(
+            "http://127.0.0.1:4500/",
+            "ws://127.0.0.1:8123/api/v1/ws/translate",
+        )
+        launch_desktop_window.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

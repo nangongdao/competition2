@@ -1,9 +1,9 @@
-"""Desktop launcher for the local AI Interpreter app.
+"""Local launcher for the AI Interpreter app.
 
 The launcher serves the built Vite frontend, starts the FastAPI backend when
-needed, and opens the UI in an Electron BrowserWindow. The Python process owns
-service lifecycle so backend/static services are cleaned up when the desktop
-window exits.
+needed, and opens the UI in either an Electron BrowserWindow or the default web
+browser. The Python process owns service lifecycle so backend/static services
+are cleaned up when the app session exits.
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ import sys
 import threading
 import time
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+import webbrowser
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -44,6 +45,7 @@ BACKEND_START_TIMEOUT_SECONDS = 35
 DEFAULT_DESKTOP_ASR_PROFILE = "light"
 DESKTOP_ASR_PROFILE_ENV = "AI_INTERPRETER_DESKTOP_ASR_PROFILE"
 WS_URL_QUERY_PARAM = "wsUrl"
+LAUNCH_MODES = {"desktop", "web"}
 SUPPORTED_UI_LANGUAGES = {"zh-CN", "en-US"}
 SUPPORTED_TRANSLATION_ENGINES = {"claude", "openai"}
 SUPPORTED_SOURCE_LANGUAGES = {"auto", "en", "ja", "ko", "es", "fr", "de"}
@@ -405,6 +407,10 @@ def append_query_param(url: str, name: str, value: str) -> str:
     ))
 
 
+def create_frontend_app_url(frontend_url: str, backend_ws_url: str) -> str:
+    return append_query_param(frontend_url, WS_URL_QUERY_PARAM, backend_ws_url)
+
+
 def show_error(message: str) -> None:
     detailed_message = f"{message}\n\nSee log:\n{LOG_FILE}"
     try:
@@ -619,7 +625,7 @@ def launch_desktop_window(url: str, backend_ws_url: str) -> subprocess.Popen[str
         raise LauncherError(f"Electron main process file is missing: {ELECTRON_MAIN}")
 
     command = [str(electron_executable), str(ELECTRON_MAIN)]
-    desktop_url = append_query_param(url, WS_URL_QUERY_PARAM, backend_ws_url)
+    desktop_url = create_frontend_app_url(url, backend_ws_url)
     env = os.environ.copy()
     env["AI_INTERPRETER_DESKTOP_URL"] = desktop_url
     env["AI_INTERPRETER_LOG_FILE"] = str(LOG_FILE)
@@ -645,6 +651,31 @@ def launch_desktop_window(url: str, backend_ws_url: str) -> subprocess.Popen[str
     return process
 
 
+def launch_web_browser(url: str, backend_ws_url: str) -> str:
+    app_url = create_frontend_app_url(url, backend_ws_url)
+    write_log(f"Web backend WebSocket URL: {backend_ws_url}")
+    write_log(f"Opening browser app URL: {app_url}")
+    opened = webbrowser.open(app_url, new=2)
+    if not opened:
+        write_log("Default browser did not report a successful open; URL printed to console")
+    return app_url
+
+
+def wait_for_web_session(app_url: str) -> None:
+    print("")
+    print("AI Interpreter web mode is running.")
+    print(f"App URL: {app_url}")
+    print(f"Startup log: {LOG_FILE}")
+    print("Press Ctrl+C or close this window to stop launcher-owned services.")
+    print("")
+
+    try:
+        while True:
+            time.sleep(3600)
+    except KeyboardInterrupt:
+        write_log("Web launcher stopped by keyboard interrupt")
+
+
 def terminate_process(process: subprocess.Popen[str]) -> None:
     if process.poll() is not None:
         return
@@ -658,11 +689,17 @@ def terminate_process(process: subprocess.Popen[str]) -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Start AI Interpreter in desktop mode")
+    parser = argparse.ArgumentParser(description="Start AI Interpreter in local mode")
+    parser.add_argument(
+        "--mode",
+        choices=sorted(LAUNCH_MODES),
+        default="desktop",
+        help="Launch surface: desktop opens Electron, web opens the default browser",
+    )
     parser.add_argument(
         "--build",
         action="store_true",
-        help="Build the frontend before starting desktop mode",
+        help="Build the frontend before starting local mode",
     )
     parser.add_argument(
         "--backend-port",
@@ -718,11 +755,16 @@ def main() -> int:
         backend_port = resolve_backend_port(args.backend_port)
         backend_process = start_backend(backend_port, asr_profile, desktop_settings)
 
-        splash.set_status("Opening app window")
-        desktop_process = launch_desktop_window(
-            frontend_url,
-            create_backend_ws_url(backend_port),
-        )
+        backend_ws_url = create_backend_ws_url(backend_port)
+        splash.set_status("Opening app")
+
+        if args.mode == "web":
+            app_url = launch_web_browser(frontend_url, backend_ws_url)
+            splash.close()
+            wait_for_web_session(app_url)
+            return 0
+
+        desktop_process = launch_desktop_window(frontend_url, backend_ws_url)
         splash.close()
         desktop_process.wait()
 
