@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 
 import type { DesktopOverlayState } from '../desktop/overlay'
+import type { WebOverlayState } from '../desktop/web-overlay'
 import type { UiText } from '../i18n'
 import type {
   AppStatus,
@@ -29,6 +30,7 @@ interface ControlPanelProps {
   ttsSettings: TtsSettings
   ttsDiagnostics: TtsDiagnostics
   desktopOverlayState: DesktopOverlayState
+  webOverlayState: WebOverlayState
   uiText: UiText
   onStart: () => void
   onStop: () => void
@@ -36,6 +38,7 @@ interface ControlPanelProps {
   onManualRevise: () => void
   onOpenHistory: () => void
   onDesktopOverlayToggle: () => void
+  onWebOverlayToggle: () => void
   onSubtitleModeChange: (mode: SubtitleMode) => void
   onSourceLanguageChange: (language: SourceLanguage) => void
   onTtsEnabledChange: (enabled: boolean) => void
@@ -114,6 +117,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   ttsSettings,
   ttsDiagnostics,
   desktopOverlayState,
+  webOverlayState,
   uiText,
   onStart,
   onStop,
@@ -121,6 +125,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   onManualRevise,
   onOpenHistory,
   onDesktopOverlayToggle,
+  onWebOverlayToggle,
   onSubtitleModeChange,
   onSourceLanguageChange,
   onTtsEnabledChange,
@@ -131,6 +136,12 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   const text = uiText.control
   const isActive = status === 'capturing' || status === 'translating'
   const canUseTts = ttsDiagnostics.isSupported
+  const floatingSubtitles = resolveFloatingSubtitleControl(
+    desktopOverlayState,
+    webOverlayState,
+    onDesktopOverlayToggle,
+    onWebOverlayToggle,
+  )
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -292,26 +303,26 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
           </button>
         </div>
 
-        {desktopOverlayState.available ? (
+        {floatingSubtitles.available ? (
           <div style={buttonClipStyle}>
             <button
               type="button"
-              aria-pressed={desktopOverlayState.visible}
+              aria-pressed={floatingSubtitles.visible}
               style={{
                 ...secondaryButtonStyle,
                 width: '100%',
-                background: desktopOverlayState.visible
+                background: floatingSubtitles.visible
                   ? 'rgba(74,163,255,0.18)'
                   : 'rgba(255,255,255,0.04)',
-                borderColor: desktopOverlayState.visible
+                borderColor: floatingSubtitles.visible
                   ? 'rgba(74,163,255,0.4)'
                   : 'rgba(255,255,255,0.1)',
               }}
-              onClick={onDesktopOverlayToggle}
+              onClick={floatingSubtitles.onToggle}
             >
-              {desktopOverlayState.visible
-                ? text.floatingSubtitlesOn
-                : text.floatingSubtitlesOff}
+              {floatingSubtitles.visible
+                ? text.closeFloatingSubtitles
+                : text.openFloatingSubtitles}
             </button>
           </div>
         ) : null}
@@ -597,4 +608,33 @@ function formatCounterMap(values: Record<string, number> | undefined): string {
 function parseSourceLanguage(value: string): SourceLanguage {
   const option = SOURCE_LANGUAGE_VALUES.find((item) => item === value)
   return option ?? 'en'
+}
+
+
+interface FloatingSubtitleControl {
+  available: boolean
+  visible: boolean
+  onToggle: () => void
+}
+
+
+function resolveFloatingSubtitleControl(
+  desktopOverlayState: DesktopOverlayState,
+  webOverlayState: WebOverlayState,
+  onDesktopOverlayToggle: () => void,
+  onWebOverlayToggle: () => void,
+): FloatingSubtitleControl {
+  if (desktopOverlayState.available) {
+    return {
+      available: true,
+      visible: desktopOverlayState.visible,
+      onToggle: onDesktopOverlayToggle,
+    }
+  }
+
+  return {
+    available: webOverlayState.available,
+    visible: webOverlayState.visible,
+    onToggle: onWebOverlayToggle,
+  }
 }

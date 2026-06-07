@@ -6,6 +6,7 @@ import {
   getSubtitleDisplayState,
   type DesktopOverlaySnapshot,
 } from './overlay'
+import { isWebOverlaySurface, subscribeToWebOverlaySnapshots } from './web-overlay'
 
 
 const EMPTY_OVERLAY_SNAPSHOT = createDesktopOverlaySnapshot([], 'bilingual', 0)
@@ -17,14 +18,23 @@ export const DesktopSubtitleOverlay: React.FC = () => {
   useEffect(() => {
     document.documentElement.dataset.surface = 'subtitle-overlay'
     const bridge = getDesktopBridge()
+    const cleanupCallbacks: Array<() => void> = []
 
-    if (!bridge) {
-      return undefined
+    if (bridge) {
+      cleanupCallbacks.push(
+        bridge.onSubtitleSnapshot((nextSnapshot) => {
+          setSnapshot(nextSnapshot)
+        }),
+      )
     }
 
-    return bridge.onSubtitleSnapshot((nextSnapshot) => {
-      setSnapshot(nextSnapshot)
-    })
+    if (isWebOverlaySurface(window.location.search)) {
+      cleanupCallbacks.push(subscribeToWebOverlaySnapshots(setSnapshot))
+    }
+
+    return () => {
+      cleanupCallbacks.forEach((cleanup) => cleanup())
+    }
   }, [])
 
   return (
@@ -63,4 +73,3 @@ export const DesktopSubtitleOverlay: React.FC = () => {
     </main>
   )
 }
-

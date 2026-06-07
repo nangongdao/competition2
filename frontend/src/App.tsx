@@ -10,6 +10,11 @@ import {
   loadDesktopSettings,
   saveDesktopSettings,
 } from './desktop/settings'
+import {
+  createUnavailableWebOverlayState,
+  WebFloatingSubtitleOverlay,
+  type WebOverlayState,
+} from './desktop/web-overlay'
 import { getUiText } from './i18n'
 import { SubtitleRenderer } from './subtitle/SubtitleRenderer'
 import { AppController, type AppState } from './store/AppStore'
@@ -37,8 +42,12 @@ const App: React.FC = () => {
     available: false,
     visible: false,
   })
+  const [webOverlayState, setWebOverlayState] = useState<WebOverlayState>(
+    createUnavailableWebOverlayState(),
+  )
   const containerRef = useRef<HTMLDivElement | null>(null)
   const rendererRef = useRef<SubtitleRenderer | null>(null)
+  const webOverlayRef = useRef<WebFloatingSubtitleOverlay | null>(null)
   const uiText = getUiText(desktopSettings.uiLanguage)
 
   useEffect(() => {
@@ -95,6 +104,22 @@ const App: React.FC = () => {
   }, [])
 
   useEffect(() => {
+    if (getDesktopBridge()) {
+      return undefined
+    }
+
+    const webOverlay = new WebFloatingSubtitleOverlay()
+    webOverlayRef.current = webOverlay
+    const unsubscribe = webOverlay.subscribe(setWebOverlayState)
+
+    return () => {
+      unsubscribe()
+      webOverlay.destroy()
+      webOverlayRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
     const container = containerRef.current
     if (!container || rendererRef.current) {
       return
@@ -117,14 +142,13 @@ const App: React.FC = () => {
   }, [appState.subtitleMode])
 
   useEffect(() => {
+    const snapshot = createDesktopOverlaySnapshot(appState.visibleSubtitles, appState.subtitleMode)
     const bridge = getDesktopBridge()
-    if (!bridge) {
-      return
+    if (bridge) {
+      bridge.sendSubtitleSnapshot(snapshot)
     }
 
-    bridge.sendSubtitleSnapshot(
-      createDesktopOverlaySnapshot(appState.visibleSubtitles, appState.subtitleMode),
-    )
+    webOverlayRef.current?.sendSnapshot(snapshot)
   }, [appState.visibleSubtitles, appState.subtitleMode])
 
   const handleStart = (): void => {
@@ -154,6 +178,27 @@ const App: React.FC = () => {
     bridge.setOverlayVisible(!desktopOverlayState.visible)
   }
 
+  const handleWebOverlayToggle = (): void => {
+    const webOverlay = webOverlayRef.current
+    if (!webOverlay || !webOverlayState.available) {
+      return
+    }
+
+    if (webOverlayState.visible) {
+      webOverlay.close()
+      return
+    }
+
+    webOverlay.open().then((state) => {
+      if (state.reason === 'popup_blocked' || state.reason === 'open_failed') {
+        window.alert(uiText.control.floatingSubtitlesOpenFailed)
+      }
+    }).catch((error: unknown) => {
+      console.error('[App] failed to open web subtitle overlay', error)
+      window.alert(uiText.control.floatingSubtitlesOpenFailed)
+    })
+  }
+
   return (
     <div
       ref={containerRef}
@@ -180,6 +225,7 @@ const App: React.FC = () => {
         ttsSettings={appState.ttsSettings}
         ttsDiagnostics={appState.ttsDiagnostics}
         desktopOverlayState={desktopOverlayState}
+        webOverlayState={webOverlayState}
         uiText={uiText}
         onStart={handleStart}
         onStop={() => controller.stop()}
@@ -187,6 +233,7 @@ const App: React.FC = () => {
         onManualRevise={() => controller.requestManualRevision()}
         onOpenHistory={() => setIsHistoryOpen(true)}
         onDesktopOverlayToggle={handleDesktopOverlayToggle}
+        onWebOverlayToggle={handleWebOverlayToggle}
         onSubtitleModeChange={(mode) => controller.setSubtitleMode(mode)}
         onSourceLanguageChange={(language) => controller.setSourceLanguage(language)}
         onTtsEnabledChange={(enabled) => controller.setTtsEnabled(enabled)}

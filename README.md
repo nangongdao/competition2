@@ -35,6 +35,8 @@ Implemented product capabilities now include:
 - Secret-safe endurance preflight for checking Redis, Whisper, CUDA, and provider key readiness before long runs.
 - Web-first local launcher that starts the built frontend, FastAPI backend, and
   default browser from a double-click entry without requiring Electron.
+- Web floating subtitle window with Document Picture-in-Picture support and
+  popup fallback, so browser startup is not limited to in-page subtitles.
 - Optional Electron desktop launcher that starts the built frontend, FastAPI backend, and a native desktop window from a double-click entry.
 - Electron single-instance, tray restore, minimize-to-tray, and startup-log menu behavior for a more software-like local desktop experience.
 - Electron floating subtitle overlay that opens a transparent always-on-top
@@ -133,11 +135,13 @@ ASR model/API key/base URL, and ASR profile are read when the backend starts, so
 restart `start-web.cmd` or the backend after saving them. Interface language
 changes apply in the frontend immediately after saving.
 
-In web mode, live subtitles appear inside the AI Interpreter web page. This mode
-does not inject subtitles into the original video page and does not create an
-OS-level transparent floating subtitle layer. Use browser tab/system-audio
-sharing when available, or place the AI Interpreter page beside the original
-video page. The transparent always-on-top overlay is still Electron-only.
+In web mode, the main AI Interpreter page remains the control and audio-capture
+surface. Use the control panel's floating-subtitle button to open a separate
+subtitle window. Chromium-based browsers use Document Picture-in-Picture when
+available so the subtitle window can float above the video; other browsers fall
+back to a normal popup window. This web path still does not inject subtitles into
+the original video page, and true OS-level transparent always-on-top behavior
+remains Electron-only.
 
 Startup logs are written to `logs/desktop-launcher.log`. If port `8000` is
 occupied by an unhealthy or stale process, the launcher chooses another local

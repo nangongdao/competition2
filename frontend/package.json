@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "test": "node --test --import tsx src/audio/AudioCapture.test.ts src/audio/TtsPlayer.test.ts src/desktop/overlay.test.ts src/desktop/settings.test.ts src/i18n.test.ts src/network/WsClient.test.ts src/network/ws-url.test.ts src/subtitle/subtitle-export.test.ts",
+    "test": "node --test --import tsx src/audio/AudioCapture.test.ts src/audio/TtsPlayer.test.ts src/desktop/overlay.test.ts src/desktop/settings.test.ts src/desktop/web-overlay.test.ts src/i18n.test.ts src/network/WsClient.test.ts src/network/ws-url.test.ts src/subtitle/subtitle-export.test.ts",
     "build": "tsc && vite build",
     "desktop:window": "electron electron/main.cjs",
     "preview": "vite preview"

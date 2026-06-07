@@ -40,6 +40,9 @@ export interface ControlPanelText {
   historyAndExport: (count: number) => string
   floatingSubtitlesOn: string
   floatingSubtitlesOff: string
+  openFloatingSubtitles: string
+  closeFloatingSubtitles: string
+  floatingSubtitlesOpenFailed: string
   voiceOn: string
   voiceOff: string
   voiceUnavailable: string
@@ -219,6 +222,9 @@ const UI_TEXT: Record<UiLanguage, UiText> = {
       historyAndExport: (count) => `历史与导出 (${count})`,
       floatingSubtitlesOn: '悬浮字幕已开启',
       floatingSubtitlesOff: '悬浮字幕已关闭',
+      openFloatingSubtitles: '打开悬浮字幕窗',
+      closeFloatingSubtitles: '关闭悬浮字幕窗',
+      floatingSubtitlesOpenFailed: '无法打开悬浮字幕窗。请允许浏览器弹窗，或使用最新版 Chrome / Edge。',
       voiceOn: '语音已开启',
       voiceOff: '语音已关闭',
       voiceUnavailable: '语音不可用',
@@ -343,6 +349,9 @@ const UI_TEXT: Record<UiLanguage, UiText> = {
       historyAndExport: (count) => `History and export (${count})`,
       floatingSubtitlesOn: 'Floating subtitles on',
       floatingSubtitlesOff: 'Floating subtitles off',
+      openFloatingSubtitles: 'Open floating subtitles',
+      closeFloatingSubtitles: 'Close floating subtitles',
+      floatingSubtitlesOpenFailed: 'Could not open the floating subtitle window. Allow browser popups or use the latest Chrome / Edge.',
       voiceOn: 'Voice on',
       voiceOff: 'Voice off',
       voiceUnavailable: 'Voice unavailable',

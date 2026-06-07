@@ -24,6 +24,7 @@
 | [hooks.md](./hooks.md)                               | Query and mutation hook patterns                     | Reference     |
 | [api-integration.md](./api-integration.md)           | oRPC client, real-time, AI streaming                 | Reference     |
 | [tts-playback.md](./tts-playback.md)                 | Local browser/Electron TTS playback queue            | Reference     |
+| [web-floating-subtitles.md](./web-floating-subtitles.md) | Browser external subtitle window and snapshot sync | Reference     |
 | [state-management.md](./state-management.md)         | URL state with nuqs, React Context patterns          | Reference     |
 | [directory-structure.md](./directory-structure.md)    | Project structure and module conventions             | Reference     |
 | [type-safety.md](./type-safety.md)                   | TypeScript guidelines, type inference, Zod           | Reference     |
