@@ -135,6 +135,11 @@ export interface DesktopSettingsSnapshot {
     hasOpenaiApiKey: boolean
     hasAnthropicApiKey: boolean
   }
+  asr: {
+    model: string
+    openaiBaseUrl: string
+    hasOpenaiApiKey: boolean
+  }
   runtime: {
     asrProfile: DesktopAsrProfile
     sourceLanguage: SourceLanguage
@@ -151,6 +156,12 @@ export interface DesktopSettingsUpdate {
     anthropicApiKey: string
     clearOpenaiApiKey: boolean
     clearAnthropicApiKey: boolean
+  }
+  asr: {
+    model: string
+    openaiBaseUrl: string
+    openaiApiKey: string
+    clearOpenaiApiKey: boolean
   }
   runtime: {
     asrProfile: DesktopAsrProfile

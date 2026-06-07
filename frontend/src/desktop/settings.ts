@@ -23,6 +23,11 @@ export const DEFAULT_DESKTOP_SETTINGS: DesktopSettingsSnapshot = {
     hasOpenaiApiKey: false,
     hasAnthropicApiKey: false,
   },
+  asr: {
+    model: 'whisper-1',
+    openaiBaseUrl: 'https://api.openai.com/v1',
+    hasOpenaiApiKey: false,
+  },
   runtime: {
     asrProfile: 'remote',
     sourceLanguage: 'en',
@@ -43,6 +48,7 @@ export function createUnavailableDesktopSettings(): DesktopSettingsSnapshot {
   return {
     ...DEFAULT_DESKTOP_SETTINGS,
     translation: { ...DEFAULT_DESKTOP_SETTINGS.translation },
+    asr: { ...DEFAULT_DESKTOP_SETTINGS.asr },
     runtime: { ...DEFAULT_DESKTOP_SETTINGS.runtime },
   }
 }
@@ -191,6 +197,7 @@ export function sanitizeDesktopSettingsSnapshot(
     return createUnavailableDesktopSettings()
   }
   const translation = isRecord(value.translation) ? value.translation : {}
+  const asr = isRecord(value.asr) ? value.asr : {}
   const runtime = isRecord(value.runtime) ? value.runtime : {}
 
   return {
@@ -209,6 +216,14 @@ export function sanitizeDesktopSettingsSnapshot(
       ),
       hasOpenaiApiKey: translation.hasOpenaiApiKey === true,
       hasAnthropicApiKey: translation.hasAnthropicApiKey === true,
+    },
+    asr: {
+      model: pickString(asr.model, DEFAULT_DESKTOP_SETTINGS.asr.model),
+      openaiBaseUrl: pickString(
+        asr.openaiBaseUrl,
+        DEFAULT_DESKTOP_SETTINGS.asr.openaiBaseUrl,
+      ),
+      hasOpenaiApiKey: asr.hasOpenaiApiKey === true,
     },
     runtime: {
       asrProfile: pickAsrProfile(

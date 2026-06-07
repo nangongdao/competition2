@@ -13,6 +13,7 @@ if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
 from services.local_settings import (
+    LocalAsrSettings,
     LocalRuntimeSettings,
     LocalSettings,
     LocalTranslationSettings,
@@ -41,6 +42,11 @@ class LocalSettingsTests(unittest.TestCase):
                 openai_api_key="real-openai-key",
                 anthropic_api_key="",
             ),
+            asr=LocalAsrSettings(
+                model="whisper-1",
+                openai_base_url="https://api.openai.com/v1",
+                openai_api_key="real-asr-key",
+            ),
             runtime=LocalRuntimeSettings(
                 asr_profile="light",
                 source_language="ja",
@@ -55,6 +61,11 @@ class LocalSettingsTests(unittest.TestCase):
         self.assertEqual(translation["hasAnthropicApiKey"], False)
         self.assertNotIn("openaiApiKey", translation)
         self.assertNotIn("anthropicApiKey", translation)
+        asr = snapshot["asr"]
+        self.assertIsInstance(asr, dict)
+        self.assertEqual(asr["model"], "whisper-1")
+        self.assertEqual(asr["hasOpenaiApiKey"], True)
+        self.assertNotIn("openaiApiKey", asr)
 
     def test_merge_preserves_existing_secret_when_update_is_blank(self) -> None:
         current = LocalSettings(
@@ -65,6 +76,11 @@ class LocalSettingsTests(unittest.TestCase):
                 openai_base_url="https://example.test/v1",
                 openai_api_key="saved-openai-key",
                 anthropic_api_key="saved-anthropic-key",
+            ),
+            asr=LocalAsrSettings(
+                model="whisper-1",
+                openai_base_url="https://api.openai.com/v1",
+                openai_api_key="saved-asr-key",
             ),
             runtime=LocalRuntimeSettings(
                 asr_profile="light",
@@ -79,6 +95,10 @@ class LocalSettingsTests(unittest.TestCase):
                     "model": "claude-sonnet-4-20250514",
                     "openaiApiKey": " ",
                     "anthropicApiKey": "",
+                },
+                "asr": {
+                    "model": "gpt-4o-mini-transcribe",
+                    "openaiApiKey": "",
                 }
             },
             current,
@@ -88,6 +108,8 @@ class LocalSettingsTests(unittest.TestCase):
         self.assertEqual(settings.translation.model, "claude-sonnet-4-20250514")
         self.assertEqual(settings.translation.openai_api_key, "saved-openai-key")
         self.assertEqual(settings.translation.anthropic_api_key, "saved-anthropic-key")
+        self.assertEqual(settings.asr.model, "gpt-4o-mini-transcribe")
+        self.assertEqual(settings.asr.openai_api_key, "saved-asr-key")
 
     def test_merge_clears_secret_only_when_requested(self) -> None:
         current = LocalSettings(
@@ -98,6 +120,11 @@ class LocalSettingsTests(unittest.TestCase):
                 openai_base_url="https://api.openai.com/v1",
                 openai_api_key="saved-openai-key",
                 anthropic_api_key="saved-anthropic-key",
+            ),
+            asr=LocalAsrSettings(
+                model="whisper-1",
+                openai_base_url="https://api.openai.com/v1",
+                openai_api_key="saved-asr-key",
             ),
             runtime=LocalRuntimeSettings(
                 asr_profile="light",
@@ -110,6 +137,9 @@ class LocalSettingsTests(unittest.TestCase):
                 "translation": {
                     "clearOpenaiApiKey": True,
                     "anthropicApiKey": "new-anthropic-key",
+                },
+                "asr": {
+                    "clearOpenaiApiKey": True,
                 }
             },
             current,
@@ -117,6 +147,7 @@ class LocalSettingsTests(unittest.TestCase):
 
         self.assertEqual(settings.translation.openai_api_key, "")
         self.assertEqual(settings.translation.anthropic_api_key, "new-anthropic-key")
+        self.assertEqual(settings.asr.openai_api_key, "")
 
     def test_save_local_settings_update_writes_normalized_file(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -131,6 +162,11 @@ class LocalSettingsTests(unittest.TestCase):
     "openaiBaseUrl": "https://api.openai.com/v1",
     "openaiApiKey": "",
     "anthropicApiKey": ""
+  },
+  "asr": {
+    "model": "whisper-1",
+    "openaiBaseUrl": "https://api.openai.com/v1",
+    "openaiApiKey": ""
   },
   "runtime": {
     "asrProfile": "light",
@@ -150,6 +186,11 @@ class LocalSettingsTests(unittest.TestCase):
                         "openaiBaseUrl": " https://example.test/v1 ",
                         "openaiApiKey": " local-key ",
                     },
+                    "asr": {
+                        "model": " gpt-4o-mini-transcribe ",
+                        "openaiBaseUrl": " https://api.openai.com/v1 ",
+                        "openaiApiKey": " asr-key ",
+                    },
                     "runtime": {
                         "asrProfile": "env",
                         "sourceLanguage": "fr",
@@ -164,7 +205,18 @@ class LocalSettingsTests(unittest.TestCase):
         self.assertEqual(settings.translation.engine, "openai")
         self.assertEqual(settings.translation.model, "custom-model")
         self.assertEqual(settings.translation.openai_api_key, "local-key")
+        self.assertEqual(settings.asr.model, "gpt-4o-mini-transcribe")
+        self.assertEqual(settings.asr.openai_base_url, "https://api.openai.com/v1")
+        self.assertEqual(settings.asr.openai_api_key, "asr-key")
         self.assertEqual(persisted, settings)
+        self.assertEqual(
+            create_settings_file_payload(persisted)["asr"],
+            {
+                "model": "gpt-4o-mini-transcribe",
+                "openaiBaseUrl": "https://api.openai.com/v1",
+                "openaiApiKey": "asr-key",
+            },
+        )
         self.assertEqual(
             create_settings_file_payload(persisted)["runtime"],
             {"asrProfile": "env", "sourceLanguage": "fr"},

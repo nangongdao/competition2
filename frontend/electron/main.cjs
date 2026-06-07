@@ -259,6 +259,11 @@ function createDefaultSettings() {
       openaiApiKey: '',
       anthropicApiKey: '',
     },
+    asr: {
+      model: 'whisper-1',
+      openaiBaseUrl: 'https://api.openai.com/v1',
+      openaiApiKey: '',
+    },
     runtime: {
       asrProfile: 'remote',
       sourceLanguage: 'en',
@@ -297,6 +302,7 @@ function writeSettingsFile(settings) {
 function normalizeSettings(rawSettings, fallback) {
   const raw = isPlainObject(rawSettings) ? rawSettings : {}
   const rawTranslation = isPlainObject(raw.translation) ? raw.translation : {}
+  const rawAsr = isPlainObject(raw.asr) ? raw.asr : {}
   const rawRuntime = isPlainObject(raw.runtime) ? raw.runtime : {}
 
   return {
@@ -318,6 +324,11 @@ function normalizeSettings(rawSettings, fallback) {
         fallback.translation.anthropicApiKey,
       ),
     },
+    asr: {
+      model: pickString(rawAsr.model, fallback.asr.model),
+      openaiBaseUrl: pickString(rawAsr.openaiBaseUrl, fallback.asr.openaiBaseUrl),
+      openaiApiKey: pickString(rawAsr.openaiApiKey, fallback.asr.openaiApiKey),
+    },
     runtime: {
       asrProfile: pickAllowed(rawRuntime.asrProfile, ASR_PROFILES, fallback.runtime.asrProfile),
       sourceLanguage: pickAllowed(
@@ -333,6 +344,7 @@ function mergeSettingsUpdate(update) {
   const current = readSettingsFile()
   const rawUpdate = isPlainObject(update) ? update : {}
   const rawTranslation = isPlainObject(rawUpdate.translation) ? rawUpdate.translation : {}
+  const rawAsr = isPlainObject(rawUpdate.asr) ? rawUpdate.asr : {}
   const rawRuntime = isPlainObject(rawUpdate.runtime) ? rawUpdate.runtime : {}
 
   const next = normalizeSettings(
@@ -342,6 +354,10 @@ function mergeSettingsUpdate(update) {
         engine: rawTranslation.engine,
         model: rawTranslation.model,
         openaiBaseUrl: rawTranslation.openaiBaseUrl,
+      },
+      asr: {
+        model: rawAsr.model,
+        openaiBaseUrl: rawAsr.openaiBaseUrl,
       },
       runtime: {
         asrProfile: rawRuntime.asrProfile,
@@ -359,6 +375,11 @@ function mergeSettingsUpdate(update) {
     current.translation.anthropicApiKey,
     rawTranslation.anthropicApiKey,
     rawTranslation.clearAnthropicApiKey,
+  )
+  next.asr.openaiApiKey = resolveSecretUpdate(
+    current.asr.openaiApiKey,
+    rawAsr.openaiApiKey,
+    rawAsr.clearOpenaiApiKey,
   )
 
   return next
@@ -383,6 +404,11 @@ function createSettingsSnapshot(settings) {
       openaiBaseUrl: settings.translation.openaiBaseUrl,
       hasOpenaiApiKey: settings.translation.openaiApiKey.trim().length > 0,
       hasAnthropicApiKey: settings.translation.anthropicApiKey.trim().length > 0,
+    },
+    asr: {
+      model: settings.asr.model,
+      openaiBaseUrl: settings.asr.openaiBaseUrl,
+      hasOpenaiApiKey: settings.asr.openaiApiKey.trim().length > 0,
     },
     runtime: {
       asrProfile: settings.runtime.asrProfile,

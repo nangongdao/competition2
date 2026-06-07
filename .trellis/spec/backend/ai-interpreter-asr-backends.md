@@ -43,6 +43,21 @@ AI_INTERPRETER_DESKTOP_ASR_PROFILE=remote|light|cpu|gpu|env
 python tools/desktop_launcher.py --asr-profile remote|light|cpu|gpu|env
 ```
 
+Local web/desktop settings:
+
+```json
+{
+  "asr": {
+    "model": "whisper-1",
+    "openaiBaseUrl": "https://api.openai.com/v1",
+    "openaiApiKey": ""
+  },
+  "runtime": {
+    "asrProfile": "remote"
+  }
+}
+```
+
 ### 3. Contracts
 
 - Local web/desktop startup defaults to `remote`. The launcher must set
@@ -53,6 +68,15 @@ python tools/desktop_launcher.py --asr-profile remote|light|cpu|gpu|env
   startup.
 - Remote ASR uses `ASR_OPENAI_API_KEY` / `ASR_OPENAI_BASE_URL` when set, then
   falls back to `OPENAI_API_KEY` / `OPENAI_BASE_URL`.
+- The browser/Electron local settings panel must keep remote ASR settings in an
+  `asr` section separate from `translation`; `asr.model` maps to
+  `ASR_OPENAI_MODEL`, `asr.openaiBaseUrl` maps to `ASR_OPENAI_BASE_URL`, and
+  `asr.openaiApiKey` maps to `ASR_OPENAI_API_KEY` only for the `remote`
+  launcher profile. Profile `env` must not inject these values.
+- Official OpenAI Whisper transcription uses
+  `ASR_OPENAI_BASE_URL=https://api.openai.com/v1` and
+  `ASR_OPENAI_MODEL=whisper-1`. Do not include `/audio/transcriptions` in the
+  base URL.
 - Remote ASR receives frontend float32 PCM chunks, buffers the same 2-second
   window as Whisper, converts the window to mono 16-bit WAV, and sends it to
   the OpenAI-compatible audio transcription API using `ASR_OPENAI_MODEL`.
@@ -91,6 +115,9 @@ python tools/desktop_launcher.py --asr-profile remote|light|cpu|gpu|env
   files on a machine configured for remote API use.
 - Bad: frontend accepts `remote` but Electron/backend local settings reject it,
   causing the saved setting to fall back to a local profile.
+- Bad: the user fills a chat-only Flash model into `asr.model`; it may be valid
+  for translation but cannot satisfy `/audio/transcriptions` unless the provider
+  explicitly documents that support.
 
 ### 6. Tests Required
 
@@ -107,6 +134,7 @@ python tools/desktop_launcher.py --asr-profile remote|light|cpu|gpu|env
 - Frontend/Electron tests:
   - settings sanitizers accept `remote` and default to it
   - settings UI offers `remote`
+  - settings snapshots expose ASR key presence but never the saved ASR key value
 - Smoke test:
   - start backend with `ASR_ENGINE=openai` and dummy API key; `/api/v1/health`
     returns HTTP 200 and logs contain no Whisper model load.

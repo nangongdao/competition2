@@ -108,6 +108,10 @@ export interface SettingsPanelText {
   clearAnthropicKey: string
   asrProfile: string
   asrProfileOptions: Record<DesktopAsrProfile, string>
+  asrModel: string
+  asrOpenaiBaseUrl: string
+  asrOpenaiApiKey: string
+  clearAsrOpenaiKey: string
   defaultSourceLanguage: string
   localFile: string
   restartNotice: string
@@ -292,9 +296,13 @@ const UI_TEXT: Record<UiLanguage, UiText> = {
         gpu: 'GPU 高精度',
         env: '使用环境文件',
       },
+      asrModel: 'ASR 转写模型',
+      asrOpenaiBaseUrl: 'ASR Base URL',
+      asrOpenaiApiKey: 'ASR API Key',
+      clearAsrOpenaiKey: '清空 ASR key',
       defaultSourceLanguage: '默认源语言',
       localFile: '本地文件',
-      restartNotice: '翻译引擎、模型、API key 和 ASR 模式保存后，需要重启网页启动器或后端后生效。',
+      restartNotice: '翻译引擎、模型、API key、ASR 配置和 ASR 模式保存后，需要重启网页启动器或后端后生效。',
       save: '保存设置',
       saving: '保存中',
       close: '关闭',
@@ -412,9 +420,13 @@ const UI_TEXT: Record<UiLanguage, UiText> = {
         gpu: 'GPU high accuracy',
         env: 'Use env files',
       },
+      asrModel: 'ASR transcription model',
+      asrOpenaiBaseUrl: 'ASR Base URL',
+      asrOpenaiApiKey: 'ASR API Key',
+      clearAsrOpenaiKey: 'Clear ASR key',
       defaultSourceLanguage: 'Default source',
       localFile: 'Local file',
-      restartNotice: 'Translation engine, model, API key, and ASR profile changes take effect after restarting the web launcher or backend.',
+      restartNotice: 'Translation engine, model, API key, ASR settings, and ASR profile changes take effect after restarting the web launcher or backend.',
       save: 'Save settings',
       saving: 'Saving',
       close: 'Close',

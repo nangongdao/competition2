@@ -54,6 +54,10 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [clearOpenaiApiKey, setClearOpenaiApiKey] = useState(false)
   const [clearAnthropicApiKey, setClearAnthropicApiKey] = useState(false)
   const [asrProfile, setAsrProfile] = useState<DesktopAsrProfile>(settings.runtime.asrProfile)
+  const [asrModel, setAsrModel] = useState(settings.asr.model)
+  const [asrOpenaiBaseUrl, setAsrOpenaiBaseUrl] = useState(settings.asr.openaiBaseUrl)
+  const [asrOpenaiApiKey, setAsrOpenaiApiKey] = useState('')
+  const [clearAsrOpenaiApiKey, setClearAsrOpenaiApiKey] = useState(false)
   const [sourceLanguage, setSourceLanguage] = useState<SourceLanguage>(
     settings.runtime.sourceLanguage,
   )
@@ -73,6 +77,10 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     setClearOpenaiApiKey(false)
     setClearAnthropicApiKey(false)
     setAsrProfile(settings.runtime.asrProfile)
+    setAsrModel(settings.asr.model)
+    setAsrOpenaiBaseUrl(settings.asr.openaiBaseUrl)
+    setAsrOpenaiApiKey('')
+    setClearAsrOpenaiApiKey(false)
     setSourceLanguage(settings.runtime.sourceLanguage)
     setSaveState('idle')
   }, [isOpen, settings])
@@ -113,6 +121,12 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         clearOpenaiApiKey,
         clearAnthropicApiKey,
       },
+      asr: {
+        model: asrModel,
+        openaiBaseUrl: asrOpenaiBaseUrl,
+        openaiApiKey: asrOpenaiApiKey,
+        clearOpenaiApiKey: clearAsrOpenaiApiKey,
+      },
       runtime: {
         asrProfile,
         sourceLanguage,
@@ -122,8 +136,10 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     if (result.success) {
       setOpenaiApiKey('')
       setAnthropicApiKey('')
+      setAsrOpenaiApiKey('')
       setClearOpenaiApiKey(false)
       setClearAnthropicApiKey(false)
+      setClearAsrOpenaiApiKey(false)
       setSaveState('saved')
       window.setTimeout(() => setSaveState('idle'), 1800)
       return
@@ -248,6 +264,29 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   </option>
                 ))}
               </SelectField>
+
+              <TextField
+                label={text.asrModel}
+                value={asrModel}
+                onChange={setAsrModel}
+              />
+
+              <TextField
+                label={text.asrOpenaiBaseUrl}
+                value={asrOpenaiBaseUrl}
+                onChange={setAsrOpenaiBaseUrl}
+              />
+
+              <SecretField
+                label={text.asrOpenaiApiKey}
+                status={settings.asr.hasOpenaiApiKey ? text.keyConfigured : text.keyMissing}
+                placeholder={text.keyPlaceholder}
+                value={asrOpenaiApiKey}
+                clearLabel={text.clearAsrOpenaiKey}
+                clearChecked={clearAsrOpenaiApiKey}
+                onValueChange={setAsrOpenaiApiKey}
+                onClearChange={setClearAsrOpenaiApiKey}
+              />
 
               <SelectField
                 label={text.defaultSourceLanguage}
@@ -402,6 +441,7 @@ function parseTranslationEngine(value: string): TranslationEngine {
 function parseAsrProfile(value: string): DesktopAsrProfile {
   switch (value) {
     case 'remote':
+    case 'light':
     case 'cpu':
     case 'gpu':
     case 'env':

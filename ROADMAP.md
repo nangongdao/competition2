@@ -40,8 +40,9 @@ Implemented capabilities now include:
   can view translations over other apps while using the main window as the
   control panel.
 - Local browser/Electron settings panel now stores local provider/model/API-key
-  settings in a Git-ignored settings file, exposes only key presence to the UI,
-  injects settings through the launcher on startup, and supports
+  settings in a Git-ignored settings file, separates translation chat settings
+  from remote ASR `/audio/transcriptions` settings, exposes only key presence
+  to the UI, injects settings through the launcher on startup, and supports
   Chinese/English interface language switching.
 - Windows desktop shortcut installer scripts for desktop launching.
 - Durable subtitle history that is separate from the visible subtitle list.

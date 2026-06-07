@@ -36,6 +36,13 @@ class LocalTranslationSettings:
 
 
 @dataclass(frozen=True)
+class LocalAsrSettings:
+    model: str
+    openai_base_url: str
+    openai_api_key: str
+
+
+@dataclass(frozen=True)
 class LocalRuntimeSettings:
     asr_profile: str
     source_language: str
@@ -45,6 +52,7 @@ class LocalRuntimeSettings:
 class LocalSettings:
     ui_language: str
     translation: LocalTranslationSettings
+    asr: LocalAsrSettings
     runtime: LocalRuntimeSettings
 
 
@@ -57,6 +65,11 @@ def create_default_local_settings() -> LocalSettings:
             openai_base_url="https://api.openai.com/v1",
             openai_api_key="",
             anthropic_api_key="",
+        ),
+        asr=LocalAsrSettings(
+            model="whisper-1",
+            openai_base_url="https://api.openai.com/v1",
+            openai_api_key="",
         ),
         runtime=LocalRuntimeSettings(
             asr_profile="remote",
@@ -97,6 +110,7 @@ def normalize_local_settings(
     base = fallback or create_default_local_settings()
     raw = as_mapping(raw_settings)
     raw_translation = as_mapping(raw.get("translation"))
+    raw_asr = as_mapping(raw.get("asr"))
     raw_runtime = as_mapping(raw.get("runtime"))
 
     return LocalSettings(
@@ -125,6 +139,17 @@ def normalize_local_settings(
                 base.translation.anthropic_api_key,
             ),
         ),
+        asr=LocalAsrSettings(
+            model=pick_string(raw_asr.get("model"), base.asr.model),
+            openai_base_url=pick_string(
+                raw_asr.get("openaiBaseUrl"),
+                base.asr.openai_base_url,
+            ),
+            openai_api_key=pick_string(
+                raw_asr.get("openaiApiKey"),
+                base.asr.openai_api_key,
+            ),
+        ),
         runtime=LocalRuntimeSettings(
             asr_profile=pick_allowed(
                 raw_runtime.get("asrProfile"),
@@ -147,6 +172,7 @@ def merge_local_settings_update(
     current_settings = current or read_local_settings()
     raw_update = as_mapping(update)
     raw_translation = as_mapping(raw_update.get("translation"))
+    raw_asr = as_mapping(raw_update.get("asr"))
     raw_runtime = as_mapping(raw_update.get("runtime"))
 
     normalized = normalize_local_settings(
@@ -156,6 +182,10 @@ def merge_local_settings_update(
                 "engine": raw_translation.get("engine"),
                 "model": raw_translation.get("model"),
                 "openaiBaseUrl": raw_translation.get("openaiBaseUrl"),
+            },
+            "asr": {
+                "model": raw_asr.get("model"),
+                "openaiBaseUrl": raw_asr.get("openaiBaseUrl"),
             },
             "runtime": {
                 "asrProfile": raw_runtime.get("asrProfile"),
@@ -180,6 +210,15 @@ def merge_local_settings_update(
                 current_settings.translation.anthropic_api_key,
                 raw_translation.get("anthropicApiKey"),
                 raw_translation.get("clearAnthropicApiKey"),
+            ),
+        ),
+        asr=LocalAsrSettings(
+            model=normalized.asr.model,
+            openai_base_url=normalized.asr.openai_base_url,
+            openai_api_key=resolve_secret_update(
+                current_settings.asr.openai_api_key,
+                raw_asr.get("openaiApiKey"),
+                raw_asr.get("clearOpenaiApiKey"),
             ),
         ),
         runtime=normalized.runtime,
@@ -225,6 +264,11 @@ def create_settings_snapshot(
             "hasOpenaiApiKey": settings.translation.openai_api_key.strip() != "",
             "hasAnthropicApiKey": settings.translation.anthropic_api_key.strip() != "",
         },
+        "asr": {
+            "model": settings.asr.model,
+            "openaiBaseUrl": settings.asr.openai_base_url,
+            "hasOpenaiApiKey": settings.asr.openai_api_key.strip() != "",
+        },
         "runtime": {
             "asrProfile": settings.runtime.asr_profile,
             "sourceLanguage": settings.runtime.source_language,
@@ -241,6 +285,11 @@ def create_settings_file_payload(settings: LocalSettings) -> dict[str, object]:
             "openaiBaseUrl": settings.translation.openai_base_url,
             "openaiApiKey": settings.translation.openai_api_key,
             "anthropicApiKey": settings.translation.anthropic_api_key,
+        },
+        "asr": {
+            "model": settings.asr.model,
+            "openaiBaseUrl": settings.asr.openai_base_url,
+            "openaiApiKey": settings.asr.openai_api_key,
         },
         "runtime": {
             "asrProfile": settings.runtime.asr_profile,

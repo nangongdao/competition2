@@ -36,6 +36,11 @@ describe('desktop settings helpers', () => {
         hasOpenaiApiKey: 'yes',
         hasAnthropicApiKey: true,
       },
+      asr: {
+        model: '',
+        openaiBaseUrl: '',
+        hasOpenaiApiKey: 'yes',
+      },
       runtime: {
         asrProfile: 'huge',
         sourceLanguage: 'prompt',
@@ -50,6 +55,9 @@ describe('desktop settings helpers', () => {
     assert.equal(settings.translation.openaiBaseUrl, 'https://example.test/v1')
     assert.equal(settings.translation.hasOpenaiApiKey, false)
     assert.equal(settings.translation.hasAnthropicApiKey, true)
+    assert.equal(settings.asr.model, 'whisper-1')
+    assert.equal(settings.asr.openaiBaseUrl, 'https://api.openai.com/v1')
+    assert.equal(settings.asr.hasOpenaiApiKey, false)
     assert.equal(settings.runtime.asrProfile, 'remote')
     assert.equal(settings.runtime.sourceLanguage, 'en')
   })
@@ -66,6 +74,11 @@ describe('desktop settings helpers', () => {
         hasOpenaiApiKey: true,
         hasAnthropicApiKey: false,
       },
+      asr: {
+        model: 'whisper-1',
+        openaiBaseUrl: 'https://api.openai.com/v1',
+        hasOpenaiApiKey: true,
+      },
       runtime: {
         asrProfile: 'env',
         sourceLanguage: 'ja',
@@ -76,6 +89,8 @@ describe('desktop settings helpers', () => {
     assert.equal(settings.uiLanguage, 'en-US')
     assert.equal(settings.translation.engine, 'claude')
     assert.equal(settings.translation.hasOpenaiApiKey, true)
+    assert.equal(settings.asr.model, 'whisper-1')
+    assert.equal(settings.asr.hasOpenaiApiKey, true)
     assert.equal(settings.runtime.asrProfile, 'env')
     assert.equal(settings.runtime.sourceLanguage, 'ja')
   })
@@ -122,6 +137,12 @@ describe('desktop settings helpers', () => {
               hasAnthropicApiKey: false,
               openaiApiKey: 'must-not-be-used',
             },
+            asr: {
+              model: 'gpt-4o-mini-transcribe',
+              openaiBaseUrl: 'https://api.openai.com/v1',
+              hasOpenaiApiKey: true,
+              openaiApiKey: 'must-not-be-used',
+            },
             runtime: {
               asrProfile: 'light',
               sourceLanguage: 'de',
@@ -135,6 +156,8 @@ describe('desktop settings helpers', () => {
     assert.equal(settings.uiLanguage, 'en-US')
     assert.equal(settings.translation.model, 'custom-model')
     assert.equal(settings.translation.hasOpenaiApiKey, true)
+    assert.equal(settings.asr.model, 'gpt-4o-mini-transcribe')
+    assert.equal(settings.asr.hasOpenaiApiKey, true)
     assert.equal(settings.runtime.sourceLanguage, 'de')
   })
 
@@ -149,6 +172,12 @@ describe('desktop settings helpers', () => {
         anthropicApiKey: '',
         clearOpenaiApiKey: false,
         clearAnthropicApiKey: false,
+      },
+      asr: {
+        model: 'whisper-1',
+        openaiBaseUrl: 'https://api.openai.com/v1',
+        openaiApiKey: '',
+        clearOpenaiApiKey: false,
       },
       runtime: {
         asrProfile: 'light',
@@ -175,6 +204,11 @@ describe('desktop settings helpers', () => {
               openaiBaseUrl: 'https://api.openai.com/v1',
               hasOpenaiApiKey: false,
               hasAnthropicApiKey: false,
+            },
+            asr: {
+              model: 'whisper-1',
+              openaiBaseUrl: 'https://api.openai.com/v1',
+              hasOpenaiApiKey: false,
             },
             runtime: {
               asrProfile: 'light',

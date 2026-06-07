@@ -45,14 +45,23 @@ class DesktopLauncherTests(unittest.TestCase):
         self.assertEqual(env["WHISPER_COMPUTE_TYPE"], "int8")
 
     def test_build_backend_environment_applies_remote_profile_defaults(self) -> None:
+        settings = desktop_launcher.DesktopSettings(
+            asr_model="whisper-1",
+            asr_openai_base_url="https://api.openai.com/v1",
+            asr_openai_api_key="local-asr-key",
+        )
+
         with (
             patch.dict(desktop_launcher.os.environ, {}, clear=True),
             patch.object(desktop_launcher, "write_log"),
         ):
-            env = desktop_launcher.build_backend_environment(8123, "remote")
+            env = desktop_launcher.build_backend_environment(8123, "remote", settings)
 
         self.assertEqual(env["PORT"], "8123")
         self.assertEqual(env["ASR_ENGINE"], "openai")
+        self.assertEqual(env["ASR_OPENAI_MODEL"], "whisper-1")
+        self.assertEqual(env["ASR_OPENAI_BASE_URL"], "https://api.openai.com/v1")
+        self.assertEqual(env["ASR_OPENAI_API_KEY"], "local-asr-key")
         self.assertNotIn("WHISPER_MODEL", env)
         self.assertNotIn("WHISPER_DEVICE", env)
         self.assertNotIn("WHISPER_COMPUTE_TYPE", env)
@@ -100,14 +109,23 @@ class DesktopLauncherTests(unittest.TestCase):
         self.assertEqual(env["WHISPER_COMPUTE_TYPE"], "int8")
 
     def test_build_backend_environment_env_profile_does_not_inject_asr_values(self) -> None:
+        settings = desktop_launcher.DesktopSettings(
+            asr_model="whisper-1",
+            asr_openai_base_url="https://api.openai.com/v1",
+            asr_openai_api_key="local-asr-key",
+        )
+
         with (
             patch.dict(desktop_launcher.os.environ, {}, clear=True),
             patch.object(desktop_launcher, "write_log"),
         ):
-            env = desktop_launcher.build_backend_environment(8123, "env")
+            env = desktop_launcher.build_backend_environment(8123, "env", settings)
 
         self.assertEqual(env["PORT"], "8123")
         self.assertNotIn("ASR_ENGINE", env)
+        self.assertNotIn("ASR_OPENAI_MODEL", env)
+        self.assertNotIn("ASR_OPENAI_BASE_URL", env)
+        self.assertNotIn("ASR_OPENAI_API_KEY", env)
         self.assertNotIn("WHISPER_MODEL", env)
         self.assertNotIn("WHISPER_DEVICE", env)
         self.assertNotIn("WHISPER_COMPUTE_TYPE", env)
@@ -119,6 +137,9 @@ class DesktopLauncherTests(unittest.TestCase):
             openai_base_url="https://example.test/v1",
             openai_api_key="local-openai-key",
             anthropic_api_key="local-anthropic-key",
+            asr_model="whisper-1",
+            asr_openai_base_url="https://api.openai.com/v1",
+            asr_openai_api_key="local-asr-key",
             source_language="ja",
         )
 
@@ -133,6 +154,9 @@ class DesktopLauncherTests(unittest.TestCase):
         self.assertEqual(env["OPENAI_BASE_URL"], "https://example.test/v1")
         self.assertEqual(env["OPENAI_API_KEY"], "local-openai-key")
         self.assertEqual(env["ANTHROPIC_API_KEY"], "local-anthropic-key")
+        self.assertNotIn("ASR_OPENAI_MODEL", env)
+        self.assertNotIn("ASR_OPENAI_BASE_URL", env)
+        self.assertNotIn("ASR_OPENAI_API_KEY", env)
         self.assertEqual(env["SOURCE_LANGUAGE"], "ja")
 
     def test_build_backend_environment_preserves_process_env_over_local_settings(self) -> None:
@@ -198,6 +222,11 @@ class DesktopLauncherTests(unittest.TestCase):
                 "model": " model ",
                 "openaiBaseUrl": " https://example.test/v1 ",
             },
+            "asr": {
+                "model": " whisper-1 ",
+                "openaiBaseUrl": " https://api.openai.com/v1 ",
+                "openaiApiKey": " asr-key ",
+            },
             "runtime": {
                 "asrProfile": "too-large",
                 "sourceLanguage": "ja",
@@ -208,6 +237,9 @@ class DesktopLauncherTests(unittest.TestCase):
         self.assertEqual(settings.nmt_engine, "")
         self.assertEqual(settings.nmt_model, "model")
         self.assertEqual(settings.openai_base_url, "https://example.test/v1")
+        self.assertEqual(settings.asr_model, "whisper-1")
+        self.assertEqual(settings.asr_openai_base_url, "https://api.openai.com/v1")
+        self.assertEqual(settings.asr_openai_api_key, "asr-key")
         self.assertEqual(settings.asr_profile, "")
         self.assertEqual(settings.source_language, "ja")
 

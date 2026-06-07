@@ -83,9 +83,9 @@ def wait_for_web_session(app_url: str) -> None: ...
   `--asr-profile gpu` prefers `large-v3` on CUDA float16 for machines with
   enough VRAM.
 - Desktop startup may read `config/desktop-settings.local.json` for local UI,
-  translation, default source-language, and ASR-profile settings. The tracked
-  `config/desktop-settings.example.json` file documents the same shape without
-  secrets.
+  translation, remote-ASR, default source-language, and ASR-profile settings.
+  The tracked `config/desktop-settings.example.json` file documents the same
+  shape without secrets.
 - Real keys in `config/desktop-settings.local.json` must stay ignored by Git.
   The renderer may show key presence but must not display a saved key value.
 - Backend-affecting desktop settings are injected into the backend environment
@@ -131,6 +131,9 @@ Local desktop settings keys:
 | `translation.openaiBaseUrl` | `OPENAI_BASE_URL` |
 | `translation.openaiApiKey` | `OPENAI_API_KEY` |
 | `translation.anthropicApiKey` | `ANTHROPIC_API_KEY` |
+| `asr.model` | `ASR_OPENAI_MODEL` for `runtime.asrProfile=remote` |
+| `asr.openaiBaseUrl` | `ASR_OPENAI_BASE_URL` for `runtime.asrProfile=remote` |
+| `asr.openaiApiKey` | `ASR_OPENAI_API_KEY` for `runtime.asrProfile=remote` |
 | `runtime.asrProfile` | Desktop launcher ASR profile selection |
 | `runtime.sourceLanguage` | `SOURCE_LANGUAGE` |
 
@@ -184,6 +187,8 @@ Local desktop settings keys:
 | Saved API key exists | Renderer shows configured/missing state, not the raw saved key |
 | User leaves key field blank | Electron preserves the existing saved key |
 | User clears key | Electron writes an empty key value to the local settings file |
+| User saves remote ASR key | Renderer and backend settings API expose only key presence, never the raw value |
+| User selects `env` ASR profile | Launcher does not inject `asr.*` values into `ASR_OPENAI_*` |
 | User saves provider/model/ASR settings | UI warns that restart is required before backend changes take effect |
 
 ### 4. Tests Required

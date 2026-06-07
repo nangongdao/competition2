@@ -72,6 +72,9 @@ class DesktopSettings:
     openai_base_url: str = ""
     openai_api_key: str = ""
     anthropic_api_key: str = ""
+    asr_model: str = ""
+    asr_openai_base_url: str = ""
+    asr_openai_api_key: str = ""
     asr_profile: str = ""
     source_language: str = ""
 
@@ -117,6 +120,7 @@ def load_desktop_settings(path: Path = DESKTOP_SETTINGS_LOCAL_PATH) -> DesktopSe
 
 def normalize_desktop_settings(raw_settings: dict[object, object]) -> DesktopSettings:
     translation = get_object_section(raw_settings, "translation")
+    asr = get_object_section(raw_settings, "asr")
     runtime = get_object_section(raw_settings, "runtime")
 
     return DesktopSettings(
@@ -132,6 +136,9 @@ def normalize_desktop_settings(raw_settings: dict[object, object]) -> DesktopSet
         openai_base_url=get_string_value(translation, "openaiBaseUrl"),
         openai_api_key=get_string_value(translation, "openaiApiKey"),
         anthropic_api_key=get_string_value(translation, "anthropicApiKey"),
+        asr_model=get_string_value(asr, "model"),
+        asr_openai_base_url=get_string_value(asr, "openaiBaseUrl"),
+        asr_openai_api_key=get_string_value(asr, "openaiApiKey"),
         asr_profile=clean_allowed_string(
             get_string_value(runtime, "asrProfile"),
             {"remote", "env", *DESKTOP_ASR_PROFILES.keys()},
@@ -312,10 +319,11 @@ def build_backend_environment(
     asr_profile: str,
     desktop_settings: DesktopSettings | None = None,
 ) -> dict[str, str]:
+    resolved_settings = desktop_settings or DesktopSettings()
     env = os.environ.copy()
     env["PORT"] = str(port)
-    apply_desktop_settings_to_env(env, desktop_settings or DesktopSettings())
-    apply_desktop_asr_profile(env, asr_profile)
+    apply_desktop_settings_to_env(env, resolved_settings)
+    apply_desktop_asr_profile(env, asr_profile, resolved_settings)
     return env
 
 
@@ -348,10 +356,25 @@ def resolve_desktop_asr_profile(
     return DEFAULT_DESKTOP_ASR_PROFILE
 
 
-def apply_desktop_asr_profile(env: dict[str, str], asr_profile: str) -> None:
+def apply_desktop_asr_profile(
+    env: dict[str, str],
+    asr_profile: str,
+    desktop_settings: DesktopSettings,
+) -> None:
     profile_name = (asr_profile or DEFAULT_DESKTOP_ASR_PROFILE).strip().lower()
     if profile_name == "remote":
         set_default_env_value(env, "ASR_ENGINE", "openai")
+        set_default_env_value(env, "ASR_OPENAI_MODEL", desktop_settings.asr_model)
+        set_default_env_value(
+            env,
+            "ASR_OPENAI_BASE_URL",
+            desktop_settings.asr_openai_base_url,
+        )
+        set_default_env_value(
+            env,
+            "ASR_OPENAI_API_KEY",
+            desktop_settings.asr_openai_api_key,
+        )
         write_log("Desktop ASR profile remote: ASR_ENGINE=openai")
         return
 

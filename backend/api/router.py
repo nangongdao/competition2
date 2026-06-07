@@ -32,6 +32,15 @@ class LocalTranslationSettingsUpdate(BaseModel):
     clearAnthropicApiKey: bool | None = None
 
 
+class LocalAsrSettingsUpdate(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    model: str | None = None
+    openaiBaseUrl: str | None = None
+    openaiApiKey: str | None = None
+    clearOpenaiApiKey: bool | None = None
+
+
 class LocalRuntimeSettingsUpdate(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -44,6 +53,7 @@ class LocalSettingsUpdate(BaseModel):
 
     uiLanguage: str | None = None
     translation: LocalTranslationSettingsUpdate | None = None
+    asr: LocalAsrSettingsUpdate | None = None
     runtime: LocalRuntimeSettingsUpdate | None = None
 
 

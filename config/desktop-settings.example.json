@@ -7,6 +7,11 @@
     "openaiApiKey": "",
     "anthropicApiKey": ""
   },
+  "asr": {
+    "model": "whisper-1",
+    "openaiBaseUrl": "https://api.openai.com/v1",
+    "openaiApiKey": ""
+  },
   "runtime": {
     "asrProfile": "remote",
     "sourceLanguage": "en"

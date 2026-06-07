@@ -40,9 +40,9 @@ Implemented product capabilities now include:
 - Electron floating subtitle overlay that opens a transparent always-on-top
   subtitle window above other desktop apps while the main window remains the
   control panel.
-- Local settings panel for browser/Electron provider/model/API-key configuration,
-  with Chinese/English interface language switching and a Git-ignored local
-  settings file.
+- Local settings panel for browser/Electron translation and remote-ASR
+  provider/model/API-key configuration, with Chinese/English interface language
+  switching and a Git-ignored local settings file.
 - Windows desktop shortcut installer scripts for launching the app from the desktop.
 - Durable subtitle history separated from the short visible subtitle list.
 - Transcript copy and TXT download from the subtitle history panel.
@@ -106,11 +106,12 @@ launcher:
    `Ctrl+C` or close that window to stop those services.
 
 By default, web startup uses remote OpenAI-compatible ASR and does not download
-or load a local Whisper model. The remote ASR path reuses the configured
-OpenAI-compatible API key/base URL and expects the provider to support an audio
-transcription endpoint such as `/audio/transcriptions`. The launcher waits for
-backend health before opening the app URL; progress and failures are written to
-`logs/desktop-launcher.log`.
+or load a local Whisper model. The remote ASR path expects the provider to
+support an audio transcription endpoint such as `/audio/transcriptions`. The
+official OpenAI Whisper API format is `ASR_OPENAI_BASE_URL=https://api.openai.com/v1`
+and `ASR_OPENAI_MODEL=whisper-1`; do not include `/audio/transcriptions` in the
+base URL. The launcher waits for backend health before opening the app URL;
+progress and failures are written to `logs/desktop-launcher.log`.
 
 Use `Settings` / `设置` in the web page to configure provider/model/API-key
 values without editing secret files by hand. Browser settings are saved through
@@ -119,10 +120,18 @@ Git. The tracked `config/desktop-settings.example.json` file remains the
 GitHub-safe template with the same shape and no real key. The browser only
 receives whether a saved key exists; it does not display stored key values.
 
+Keep ASR and translation settings separate:
+
+- Translation uses `translation.model` / `NMT_MODEL` and calls
+  `/chat/completions`; OpenAI-compatible chat models such as Flash belong here.
+- ASR uses `asr.model` / `ASR_OPENAI_MODEL` and calls `/audio/transcriptions`;
+  use `whisper-1`, `gpt-4o-mini-transcribe`, or a provider model explicitly
+  documented for audio transcription.
+
 Backend-affecting settings such as translation engine, model, API key, base URL,
-and ASR profile are read when the backend starts, so restart `start-web.cmd` or
-the backend after saving them. Interface language changes apply in the frontend
-immediately after saving.
+ASR model/API key/base URL, and ASR profile are read when the backend starts, so
+restart `start-web.cmd` or the backend after saving them. Interface language
+changes apply in the frontend immediately after saving.
 
 In web mode, live subtitles appear inside the AI Interpreter web page. This mode
 does not inject subtitles into the original video page and does not create an
@@ -142,7 +151,13 @@ Web startup defaults to the remote ASR profile:
 ```text
 ASR_ENGINE=openai
 ASR_OPENAI_MODEL=whisper-1
+ASR_OPENAI_BASE_URL=https://api.openai.com/v1
+ASR_OPENAI_API_KEY=<your-transcription-api-key>
 ```
+
+When `ASR_OPENAI_API_KEY` or `ASR_OPENAI_BASE_URL` is blank, the backend falls
+back to `OPENAI_API_KEY` and `OPENAI_BASE_URL`. Set the ASR-specific fields when
+translation and transcription use different providers or keys.
 
 Set `AI_INTERPRETER_DESKTOP_ASR_PROFILE=env` to use the ASR values from
 `backend/.env.local` exactly. Set it to `light`, `cpu`, or `gpu` only when you
@@ -176,6 +191,8 @@ without editing secret files by hand. The panel can save:
 
 - Interface language: Chinese or English.
 - OpenAI-compatible translation engine, model, base URL, and API key.
+- OpenAI-compatible ASR transcription model, base URL, and API key for
+  `/audio/transcriptions` providers such as the official `whisper-1` API.
 - Anthropic API key for Claude-compatible use.
 - Desktop ASR profile (`remote`, `light`, `cpu`, `gpu`, or `env`).
 - Default source language for new sessions.
@@ -186,9 +203,9 @@ GitHub-safe template with the same shape and no real key. The renderer only
 receives whether a saved key exists; it does not display the stored key value.
 
 Backend-affecting settings such as translation engine, model, API key, base URL,
-and ASR profile are read by the Python launcher when the backend starts, so
-restart the local launcher after saving them. Interface language changes apply
-in the frontend immediately after saving.
+ASR model/API key/base URL, and ASR profile are read by the Python launcher when
+the backend starts, so restart the local launcher after saving them. Interface
+language changes apply in the frontend immediately after saving.
 
 Startup logs are written to `logs/desktop-launcher.log`. If port `8000` is
 occupied by an unhealthy or stale process, the launcher chooses another local
@@ -202,6 +219,8 @@ Desktop startup defaults to the remote ASR profile:
 ```text
 ASR_ENGINE=openai
 ASR_OPENAI_MODEL=whisper-1
+ASR_OPENAI_BASE_URL=https://api.openai.com/v1
+ASR_OPENAI_API_KEY=<your-transcription-api-key>
 ```
 
 Set `AI_INTERPRETER_DESKTOP_ASR_PROFILE=env` to use the ASR values from
@@ -227,12 +246,15 @@ template; do not put real keys there.
 if (!(Test-Path backend/.env.local)) { Copy-Item backend/.env.example backend/.env.local }
 ```
 
-Then edit `backend/.env.local` and configure Redis, Whisper, and one provider
-key:
+Then edit `backend/.env.local` and configure Redis, remote ASR or local Whisper,
+and one translation provider key:
 
 - `REDIS_URL` and `REDIS_PROTOCOL`.
-- `ASR_ENGINE=whisper`, `WHISPER_MODEL`, `WHISPER_DEVICE`, and
-  `WHISPER_COMPUTE_TYPE`.
+- Remote ASR: `ASR_ENGINE=openai`, `ASR_OPENAI_MODEL=whisper-1`,
+  `ASR_OPENAI_BASE_URL=https://api.openai.com/v1`, and
+  `ASR_OPENAI_API_KEY`.
+- Optional local Whisper: `ASR_ENGINE=whisper`, `WHISPER_MODEL`,
+  `WHISPER_DEVICE`, and `WHISPER_COMPUTE_TYPE`.
 - `ANTHROPIC_API_KEY` for `NMT_ENGINE=claude`, or `OPENAI_API_KEY` for
   `NMT_ENGINE=openai`.
 
