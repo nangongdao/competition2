@@ -19,7 +19,11 @@ Added durable subtitle history/export UI, synced project progress docs, pushed t
 
 ### Main Changes
 
-(Add details)
+- Added a browser-native floating subtitle controller with Document Picture-in-Picture first and popup fallback.
+- Reused the existing desktop subtitle snapshot/display contract for web overlay windows.
+- Added web overlay route snapshot subscription via BroadcastChannel/localStorage fallback.
+- Added control-panel entry and localized labels for opening/closing the web floating subtitle window.
+- Documented the web overlay capability and recorded the frontend implementation contract.
 
 ### Git Commits
 
@@ -30,7 +34,9 @@ Added durable subtitle history/export UI, synced project progress docs, pushed t
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] `npm.cmd run test` in `frontend`
+- [OK] `npm.cmd run build` in `frontend`
+- [OK] `git diff --check`
 
 ### Status
 
@@ -458,6 +464,39 @@ Added browser/Electron local settings for remote ASR transcription model/base UR
 | Hash | Message |
 |------|---------|
 | `371f429` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 15: Web floating subtitle window
+
+**Date**: 2026-06-07
+**Task**: Web floating subtitle window
+**Branch**: `docs/delivery-pr-workflow`
+
+### Summary
+
+Added a web-mode floating subtitle window using Document Picture-in-Picture with popup fallback, wired subtitle snapshot sync, tests, README, and frontend spec.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `667c3bb` | (see git log) |
 
 ### Testing
 

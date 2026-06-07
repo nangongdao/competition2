@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 14
+- **Total Sessions**: 15
 - **Last Active**: 2026-06-07
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~472 | Active |
+| `journal-1.md` | ~505 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 15 | 2026-06-07 | Web floating subtitle window | `667c3bb` | `docs/delivery-pr-workflow` |
 | 14 | 2026-06-07 | 补齐远程 ASR 设置入口 | `371f429` | `docs/delivery-pr-workflow` |
 | 13 | 2026-06-07 | 默认远程 ASR 启动 | `74b6893` | `docs/delivery-pr-workflow` |
 | 12 | 2026-06-07 | Web-first startup | `f853899` | `docs/delivery-pr-workflow` |
