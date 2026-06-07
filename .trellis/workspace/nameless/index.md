@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 5
+- **Total Sessions**: 6
 - **Last Active**: 2026-06-07
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~173 | Active |
+| `journal-1.md` | ~207 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 6 | 2026-06-07 | AI 同声传译语言配置升级 | `b29ccb2`, `74cd991` | `docs/delivery-pr-workflow` |
 | 5 | 2026-06-07 | Fix OpenAI streaming compatibility | `9e7d426` | `docs/delivery-pr-workflow` |
 | 4 | 2026-06-07 | Local API key config files | `3383f94` | `docs/delivery-pr-workflow` |
 | 3 | 2026-06-07 | Endurance runner observability | `1709723` | `docs/delivery-pr-workflow` |
