@@ -333,6 +333,8 @@ Use a separate durable snapshot when a UI has both a short-lived rendered view a
 
 **Example**:
 ```typescript
+import { formatPlainTranscript } from './subtitle-export'
+
 interface SubtitleState {
   visible: SubtitleEntry[]
   history: SubtitleEntry[]
@@ -351,13 +353,42 @@ class SubtitleStore {
   }
 
   exportTranscript(): string {
-    return this._history
-      .filter((entry) => entry.sourceText || entry.translatedText)
-      .map((entry) => `${entry.sourceText}\n${entry.translatedText}`)
-      .join('\n\n')
+    return formatPlainTranscript(this._history)
   }
 }
 ```
+
+### Convention: Generate Export Artifacts From History On Demand
+
+**What**: Subtitle export artifacts are pure formatting results derived from durable `history`, not long-lived React state fields.
+
+**Why**: Live translation updates can arrive per token. Keeping TXT/SRT/VTT/Markdown strings in React state makes every token update do extra string work and creates another copy of the same data.
+
+**Signatures**:
+```typescript
+function hasExportableSubtitles(entries: SubtitleEntry[]): boolean
+function formatPlainTranscript(entries: SubtitleEntry[]): string
+function formatSrtSubtitles(entries: SubtitleEntry[]): string
+function formatVttSubtitles(entries: SubtitleEntry[]): string
+function formatLearningNotesMarkdown(entries: SubtitleEntry[]): string
+```
+
+**Contracts**:
+- All export functions read from full subtitle `history`, not the visible subtitle list.
+- Empty entries are skipped when both `sourceText` and `translatedText` are blank.
+- SRT and VTT timestamps are relative to the first exportable subtitle entry.
+- Revised entries include a visible revision marker such as `ASR revised` or `Translation revised`.
+- React state may expose `subtitleHistory`; it should not keep precomputed TXT/SRT/VTT/Markdown strings.
+
+**Good/Base/Bad Cases**:
+- Good: the history panel calls the formatter only when the user copies or downloads an artifact.
+- Base: `SubtitleStore.exportTranscript()` delegates to the same plain-transcript formatter for compatibility.
+- Bad: `AppState` stores every export string and regenerates them during every token or revision update.
+
+**Tests Required**:
+- Build/type-check the frontend after adding a new export format.
+- Verify a trimmed visible list can still export older history entries.
+- Verify revised entries keep their revision markers in TXT, SRT, VTT, and Markdown outputs.
 
 **Good/Base/Bad Cases**:
 - Good: append every subtitle entry to `history`, derive `visible` from the last N entries, and export from `history`.

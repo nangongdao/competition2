@@ -14,6 +14,7 @@ from loguru import logger
 from core.config import settings
 from models.segment import ContextWindow, Segment
 from services.asr_service import ASRService
+from services.language_config import source_language_label
 from services.nmt_service import NMTService
 
 
@@ -41,12 +42,12 @@ class RevisionService:
         re.compile(r"\b(it|they|he|she|this|that|which)\b", re.IGNORECASE),
         re.compile(r"\b(bank|run|set|point|right|left)\b", re.IGNORECASE),
     )
-    ASR_CORRECTION_PROMPT = """You are an ASR post-editor for live English speech.
+    ASR_CORRECTION_PROMPT_TEMPLATE = """You are an ASR post-editor for live {source_language} speech.
 
 Given the local context, improve the current ASR sentence only if it has obvious transcription issues.
 Return only one line.
 - If the current sentence is already acceptable, return exactly: CORRECT
-- Otherwise return the corrected English sentence
+- Otherwise return the corrected sentence in {source_language}
 """
 
     def __init__(self) -> None:
@@ -267,7 +268,7 @@ Corrected:"""
             self._api_call_counts["nmt_complete"] += 1
             corrected = (await nmt.complete_text(
                 prompt,
-                system_prompt=self.ASR_CORRECTION_PROMPT,
+                system_prompt=self._build_asr_system_prompt(segment),
             )).strip()
         except Exception as exc:
             logger.warning("ASR post-edit failed for {}: {}", segment.id, exc)
@@ -277,6 +278,10 @@ Corrected:"""
             return ""
 
         return corrected
+
+    def _build_asr_system_prompt(self, segment: Segment) -> str:
+        source_label = source_language_label(segment.source_language)
+        return self.ASR_CORRECTION_PROMPT_TEMPLATE.format(source_language=source_label)
 
     def _can_skip_translation(self, segment: Segment, context_fingerprint: str) -> bool:
         previous_fingerprint = self._context_fingerprint_by_segment.get(segment.id)

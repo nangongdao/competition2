@@ -1,18 +1,23 @@
 /**
- * 音频捕获模块
+ * Browser audio capture for the live interpretation pipeline.
  *
- * 使用浏览器 Web Audio API 捕获系统音频（getDisplayMedia），
- * 将音频流转换为 16kHz/mono/float32 的 PCM 格式，
- * 通过 WebSocket 发送到后端。
+ * The primary path uses AudioWorklet so capture work stays off the main UI
+ * thread. Browsers that do not support AudioWorklet automatically fall back to
+ * ScriptProcessorNode to keep the current demo flow usable.
  */
 
-/** 音频捕获配置 */
+import type { AudioCaptureBackend } from '../types'
+
 const AUDIO_CONFIG = {
   sampleRate: 16000,
   channelCount: 1,
-  chunkDurationMs: 100, // 每 100ms 发送一个音频块
+  chunkDurationMs: 100,
   bufferSize: 2048,
+  workletModuleUrl: resolveAudioWorkletModuleUrl(),
 } as const
+
+const WORKLET_PROCESSOR_NAME = 'audio-capture-processor'
+const WORKLET_MESSAGE_TYPE = 'audio-chunk'
 
 export type AudioCaptureState = 'inactive' | 'active' | 'error'
 
@@ -21,41 +26,49 @@ export interface AudioCaptureCallbacks {
   onAudioChunk: (chunk: ArrayBuffer) => void
 }
 
-/**
- * 系统音频捕获器
- *
- * 流程：
- * 1. getDisplayMedia 获取系统/标签页音频
- * 2. AudioContext.createMediaStreamSource 创建音频源
- * 3. ScriptProcessorNode 处理音频（重采样到 16kHz mono）
- * 4. 编码为 PCM Float32 并通过回调输出
- */
+interface AudioWorkletChunkMessage {
+  type: typeof WORKLET_MESSAGE_TYPE
+  samples: Float32Array
+}
+
 export class AudioCapture {
   private _stream: MediaStream | null = null
   private _audioContext: AudioContext | null = null
-  private _processor: ScriptProcessorNode | null = null
+  private _workletNode: AudioWorkletNode | null = null
+  private _scriptProcessor: ScriptProcessorNode | null = null
   private _source: MediaStreamAudioSourceNode | null = null
   private _state: AudioCaptureState = 'inactive'
   private _callbacks: AudioCaptureCallbacks | null = null
   private _chunkTimer: ReturnType<typeof setInterval> | null = null
   private _chunkBuffer: Float32Array[] = []
+  private _captureBackend: AudioCaptureBackend | null = null
 
-  /** 获取当前状态 */
+  private readonly _handleAudioTrackEnded = (): void => {
+    if (this._state === 'active') {
+      this.stop()
+    }
+  }
+
   get state(): AudioCaptureState {
     return this._state
   }
 
-  /** 注册回调 */
+  get captureBackend(): AudioCaptureBackend | null {
+    return this._captureBackend
+  }
+
   setCallbacks(callbacks: AudioCaptureCallbacks): void {
     this._callbacks = callbacks
   }
 
-  /** 开始捕获系统音频 */
   async start(): Promise<void> {
+    if (this._state === 'active') {
+      return
+    }
+
     try {
-      // 1. 获取显示媒体（含系统音频）
       this._stream = await navigator.mediaDevices.getDisplayMedia({
-        video: true, // 必须包含 video 才能使用 getDisplayMedia
+        video: true,
         audio: {
           echoCancellation: false,
           noiseSuppression: false,
@@ -63,110 +76,213 @@ export class AudioCapture {
         },
       })
 
-      // 获取音频轨道
       const audioTrack = this._stream.getAudioTracks()[0]
       if (!audioTrack) {
         throw new Error('No audio track available. Please enable "Share audio".')
       }
+      audioTrack.addEventListener('ended', this._handleAudioTrackEnded)
 
-      // 2. 创建 AudioContext
       this._audioContext = new AudioContext({
         sampleRate: AUDIO_CONFIG.sampleRate,
       })
-
-      // 3. 创建音频源
       this._source = this._audioContext.createMediaStreamSource(this._stream)
 
-      // 4. 创建处理器（重采样 + 缓冲）
-      this._processor = this._audioContext.createScriptProcessor(
-        AUDIO_CONFIG.bufferSize,
-        AUDIO_CONFIG.channelCount,
-        AUDIO_CONFIG.channelCount,
-      )
-
-      this._processor.onaudioprocess = (event) => {
-        const inputData = event.inputBuffer.getChannelData(0)
-        // 复制数据（因为 inputData 会被复用）
-        const chunk = new Float32Array(inputData.length)
-        chunk.set(inputData)
-        this._chunkBuffer.push(chunk)
+      const isWorkletStarted = await this._tryStartAudioWorklet()
+      if (!isWorkletStarted) {
+        this._startScriptProcessor()
       }
 
-      // 5. 连接音频图
-      this._source.connect(this._processor)
-      this._processor.connect(this._audioContext.destination)
-
-      // 6. 定期发送音频块
       this._chunkTimer = setInterval(() => {
         this._flushBuffer()
       }, AUDIO_CONFIG.chunkDurationMs)
 
-      this._state = 'active'
-      this._callbacks?.onStateChange(this._state)
-
-    } catch (err) {
-      this._state = 'error'
-      this._callbacks?.onStateChange(this._state)
-      console.error('[AudioCapture] Failed to start:', err)
-      throw err
+      this._setState('active')
+    } catch (error) {
+      this._cleanupResources()
+      this._setState('error')
+      console.error('[AudioCapture] Failed to start:', error)
+      throw error
     }
   }
 
-  /** 停止捕获 */
   stop(): void {
-    // 停止定时器
-    if (this._chunkTimer) {
-      clearInterval(this._chunkTimer)
-      this._chunkTimer = null
-    }
-
-    // 断开音频图
-    if (this._processor) {
-      this._processor.disconnect()
-      this._processor = null
-    }
-    if (this._source) {
-      this._source.disconnect()
-      this._source = null
-    }
-
-    // 关闭 AudioContext
-    if (this._audioContext && this._audioContext.state !== 'closed') {
-      this._audioContext.close()
-      this._audioContext = null
-    }
-
-    // 停止媒体流
-    if (this._stream) {
-      this._stream.getTracks().forEach((track) => track.stop())
-      this._stream = null
-    }
-
-    // 清空缓冲区
-    this._chunkBuffer = []
-
-    this._state = 'inactive'
-    this._callbacks?.onStateChange(this._state)
-
+    this._cleanupResources()
+    this._setState('inactive')
   }
 
-  /** 将缓冲区中的数据打包发送 */
-  private _flushBuffer(): void {
-    if (this._chunkBuffer.length === 0) return
+  private async _tryStartAudioWorklet(): Promise<boolean> {
+    const audioContext = this._audioContext
+    const source = this._source
 
-    // 合并所有缓冲区块
-    const totalLength = this._chunkBuffer.reduce((sum, c) => sum + c.length, 0)
+    if (
+      !audioContext ||
+      !source ||
+      !audioContext.audioWorklet ||
+      typeof AudioWorkletNode === 'undefined'
+    ) {
+      return false
+    }
+
+    try {
+      await audioContext.audioWorklet.addModule(AUDIO_CONFIG.workletModuleUrl)
+      const workletNode = new AudioWorkletNode(audioContext, WORKLET_PROCESSOR_NAME, {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        outputChannelCount: [AUDIO_CONFIG.channelCount],
+      })
+
+      workletNode.port.onmessage = (event: MessageEvent<unknown>) => {
+        const message = parseAudioWorkletChunkMessage(event.data)
+        if (!message) {
+          return
+        }
+        this._chunkBuffer.push(message.samples)
+      }
+
+      source.connect(workletNode)
+      workletNode.connect(audioContext.destination)
+
+      this._workletNode = workletNode
+      this._captureBackend = 'audio-worklet'
+      return true
+    } catch (error) {
+      this._disconnectWorklet()
+      console.warn(
+        '[AudioCapture] AudioWorklet unavailable; falling back to ScriptProcessorNode',
+        error,
+      )
+      return false
+    }
+  }
+
+  private _startScriptProcessor(): void {
+    const audioContext = this._audioContext
+    const source = this._source
+
+    if (!audioContext || !source) {
+      throw new Error('Audio graph is not ready.')
+    }
+
+    const processor = audioContext.createScriptProcessor(
+      AUDIO_CONFIG.bufferSize,
+      AUDIO_CONFIG.channelCount,
+      AUDIO_CONFIG.channelCount,
+    )
+
+    processor.onaudioprocess = (event) => {
+      const inputData = event.inputBuffer.getChannelData(0)
+      const chunk = new Float32Array(inputData.length)
+      chunk.set(inputData)
+      this._chunkBuffer.push(chunk)
+    }
+
+    source.connect(processor)
+    processor.connect(audioContext.destination)
+
+    this._scriptProcessor = processor
+    this._captureBackend = 'script-processor'
+  }
+
+  private _flushBuffer(): void {
+    if (this._chunkBuffer.length === 0) {
+      return
+    }
+
+    const totalLength = this._chunkBuffer.reduce((sum, chunk) => sum + chunk.length, 0)
     const combined = new Float32Array(totalLength)
     let offset = 0
+
     for (const chunk of this._chunkBuffer) {
       combined.set(chunk, offset)
       offset += chunk.length
     }
 
-    // 清空缓冲区
     this._chunkBuffer = []
-
-    // 发送
     this._callbacks?.onAudioChunk(combined.buffer)
   }
+
+  private _cleanupResources(): void {
+    if (this._chunkTimer) {
+      clearInterval(this._chunkTimer)
+      this._chunkTimer = null
+    }
+
+    this._disconnectWorklet()
+    this._disconnectScriptProcessor()
+
+    if (this._source) {
+      this._source.disconnect()
+      this._source = null
+    }
+
+    if (this._audioContext && this._audioContext.state !== 'closed') {
+      void this._audioContext.close()
+    }
+    this._audioContext = null
+
+    if (this._stream) {
+      for (const track of this._stream.getAudioTracks()) {
+        track.removeEventListener('ended', this._handleAudioTrackEnded)
+      }
+      for (const track of this._stream.getTracks()) {
+        track.stop()
+      }
+      this._stream = null
+    }
+
+    this._chunkBuffer = []
+    this._captureBackend = null
+  }
+
+  private _disconnectWorklet(): void {
+    if (!this._workletNode) {
+      return
+    }
+
+    this._workletNode.port.onmessage = null
+    this._workletNode.disconnect()
+    this._workletNode = null
+  }
+
+  private _disconnectScriptProcessor(): void {
+    if (!this._scriptProcessor) {
+      return
+    }
+
+    this._scriptProcessor.onaudioprocess = null
+    this._scriptProcessor.disconnect()
+    this._scriptProcessor = null
+  }
+
+  private _setState(state: AudioCaptureState): void {
+    this._state = state
+    this._callbacks?.onStateChange(this._state)
+  }
+}
+
+function parseAudioWorkletChunkMessage(data: unknown): AudioWorkletChunkMessage | null {
+  if (typeof data !== 'object' || data === null) {
+    return null
+  }
+
+  const message = data as { type?: unknown; samples?: unknown }
+  if (
+    message.type !== WORKLET_MESSAGE_TYPE ||
+    !(message.samples instanceof Float32Array)
+  ) {
+    return null
+  }
+
+  return {
+    type: WORKLET_MESSAGE_TYPE,
+    samples: message.samples,
+  }
+}
+
+function resolveAudioWorkletModuleUrl(): string {
+  const baseUrl = import.meta.env?.BASE_URL ?? '/'
+  const currentLocation =
+    typeof window === 'undefined' ? 'http://localhost/' : window.location.href
+
+  return new URL(`${baseUrl}audio-capture-worklet.js`, currentLocation).toString()
 }

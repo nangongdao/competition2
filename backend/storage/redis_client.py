@@ -22,6 +22,7 @@ class RedisClient:
             settings.redis_url,
             encoding="utf-8",
             decode_responses=True,
+            protocol=settings.redis_protocol,
         )
         await self._redis.ping()
         logger.info("Redis client connected")

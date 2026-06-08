@@ -27,6 +27,7 @@ class ContextManager:
                 settings.redis_url,
                 encoding="utf-8",
                 decode_responses=True,
+                protocol=settings.redis_protocol,
             )
             await self._redis.ping()
             logger.info("Redis connected: {}", settings.redis_url)
@@ -43,14 +44,11 @@ class ContextManager:
         exists = bool(await self._redis.exists(meta_key))
 
         if not exists:
-            await self._redis.hset(
-                meta_key,
-                mapping={
-                    "created_at": str(time.time()),
-                    "segment_count": "0",
-                    "reconnect_count": "0",
-                },
-            )
+            await self._set_session_meta(meta_key, {
+                "created_at": str(time.time()),
+                "segment_count": "0",
+                "reconnect_count": "0",
+            })
             reconnect_count = 0
         else:
             reconnect_count = await self._redis.hincrby(meta_key, "reconnect_count", 1)
@@ -59,6 +57,16 @@ class ContextManager:
         await self._redis.expire(meta_key, settings.segment_ttl_seconds)
         logger.debug("Session initialized: {}", session_id)
         return int(reconnect_count)
+
+    async def _set_session_meta(self, key: str, values: dict[str, str]) -> None:
+        """Set multiple hash fields using Redis 3-compatible HSET calls."""
+        if not self._redis:
+            raise ContextError("Redis not initialized")
+
+        pipeline = self._redis.pipeline()
+        for field, value in values.items():
+            pipeline.hset(key, field, value)
+        await pipeline.execute()
 
     async def next_segment_index(self, session_id: str) -> int:
         """Reserve a stable segment index for reconnect-safe segment IDs."""
@@ -80,6 +88,8 @@ class ContextManager:
             "id": segment.id,
             "text_asr": segment.text_asr,
             "confidence": segment.confidence,
+            "source_language": segment.source_language,
+            "target_language": segment.target_language,
             "text_translated": segment.text_translated,
             "status": segment.status,
             "timestamp": segment.timestamp,
@@ -111,6 +121,8 @@ class ContextManager:
                 id=data["id"],
                 text_asr=data["text_asr"],
                 confidence=data["confidence"],
+                source_language=data.get("source_language", "en"),
+                target_language=data.get("target_language", "zh-CN"),
                 text_translated=data.get("text_translated", ""),
                 status=data.get("status", "draft"),
                 timestamp=data.get("timestamp", 0),
@@ -132,6 +144,8 @@ class ContextManager:
             data = json.loads(raw)
             if data["id"] == segment.id:
                 data["text_translated"] = segment.text_translated
+                data["source_language"] = segment.source_language
+                data["target_language"] = segment.target_language
                 data["status"] = segment.status
                 data["revised_at"] = segment.revised_at or ""
                 data["revision_count"] = len(segment.revision_history)

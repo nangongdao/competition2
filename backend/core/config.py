@@ -1,9 +1,15 @@
 from pathlib import Path
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-PROJECT_ROOT = Path(__file__).parent.parent
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = BACKEND_ROOT.parent
+ENV_FILE_PATHS = (
+    REPO_ROOT / ".env",
+    BACKEND_ROOT / ".env",
+    BACKEND_ROOT / ".env.local",
+)
 
 
 class Settings(BaseSettings):
@@ -16,12 +22,16 @@ class Settings(BaseSettings):
 
     # Redis
     redis_url: str = "redis://localhost:6379/0"
+    redis_protocol: int = 2
 
     # ASR
-    asr_engine: str = "whisper"
-    whisper_model: str = "large-v3"
-    whisper_device: str = "cuda"
-    whisper_compute_type: str = "float16"
+    asr_engine: str = "openai"
+    asr_openai_model: str = "whisper-1"
+    asr_openai_api_key: str = ""
+    asr_openai_base_url: str = ""
+    whisper_model: str = "small"
+    whisper_device: str = "cpu"
+    whisper_compute_type: str = "int8"
 
     # NMT
     nmt_engine: str = "claude"
@@ -29,6 +39,8 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_base_url: str = "https://api.openai.com/v1"
     nmt_model: str = "claude-sonnet-4-20250514"
+    source_language: str = "en"
+    target_language: str = "zh-CN"
 
     # Context window
     context_window_size: int = 10
@@ -46,10 +58,13 @@ class Settings(BaseSettings):
     audio_chunk_duration_ms: int = 100
     audio_ttl_seconds: int = 120
     audio_queue_max_chunks: int = 100
+    diagnostics_emit_interval_seconds: float = 1.0
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
+    model_config = SettingsConfigDict(
+        env_file=tuple(str(path) for path in ENV_FILE_PATHS),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
 
 settings = Settings()

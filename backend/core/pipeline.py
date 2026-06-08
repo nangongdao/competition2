@@ -15,6 +15,11 @@ from services.context_manager import ContextManager
 from services.nmt_service import NMTService
 from services.revision_service import RevisionResult, RevisionService
 from services.session_diagnostics import SessionDiagnostics
+from services.language_config import (
+    LanguageConfig,
+    normalize_source_language,
+    normalize_target_language,
+)
 
 
 MessageCallback = Callable[[dict], Awaitable[None]]
@@ -37,20 +42,27 @@ class Pipeline:
         self._ctx = ctx_manager
         self._revision = revision
         self._diagnostics = SessionDiagnostics(session_id=session_id)
+        self._language_config = LanguageConfig.from_values(
+            settings.source_language,
+            settings.target_language,
+        )
 
         self._on_message: Optional[MessageCallback] = None
         self._sentence_count = 0
         self._running = False
         self._last_audio_at = 0.0
+        self._last_diagnostics_emit_at = 0.0
         self._decode_window_started_at: float | None = None
         self._silence_task: Optional[asyncio.Task[None]] = None
         self._audio_worker_task: Optional[asyncio.Task[None]] = None
         self._audio_queue: asyncio.Queue[tuple[bytes, float]] = asyncio.Queue(
             maxsize=settings.audio_queue_max_chunks,
         )
+        self._record_audio_queue_depth()
 
         self._asr.set_on_partial(self._handle_asr_partial)
         self._asr.set_on_final(self._handle_asr_final)
+        self._asr.set_language(self._language_config.source_language)
 
     def set_on_message(self, callback: MessageCallback) -> None:
         self._on_message = callback
@@ -69,6 +81,7 @@ class Pipeline:
             "session_id": self.session_id,
         })
         await self._emit_diagnostics()
+        self._last_diagnostics_emit_at = asyncio.get_running_loop().time()
         logger.info("Pipeline started for session {}", self.session_id)
 
     async def stop(self) -> None:
@@ -83,6 +96,7 @@ class Pipeline:
                 await self._audio_worker_task
             self._audio_worker_task = None
 
+        self._record_audio_queue_depth()
         self._asr.reset_session_state()
         self._diagnostics.finish()
         await self._emit_diagnostics()
@@ -98,8 +112,11 @@ class Pipeline:
 
         try:
             self._audio_queue.put_nowait((audio_chunk, received_at))
+            self._record_audio_queue_depth()
+            await self._emit_periodic_diagnostics(received_at)
         except asyncio.QueueFull:
             self._diagnostics.record_dropped_audio_chunk()
+            self._record_audio_queue_depth()
             logger.warning(
                 "Dropping audio chunk for {} because queue is full",
                 self.session_id,
@@ -116,10 +133,54 @@ class Pipeline:
         await self._check_revision(force=True, trigger_segment=None, trigger="manual")
         await self._emit_diagnostics()
 
+    async def emit_diagnostics(self) -> None:
+        await self._emit_diagnostics()
+
+    @property
+    def language_config(self) -> LanguageConfig:
+        return self._language_config
+
+    async def update_config(
+        self,
+        *,
+        language: object | None = None,
+        target_language: object | None = None,
+    ) -> None:
+        source = (
+            normalize_source_language(language)
+            if language is not None
+            else self._language_config.source_language
+        )
+        target = (
+            normalize_target_language(target_language)
+            if target_language is not None
+            else self._language_config.target_language
+        )
+        self._language_config = LanguageConfig(
+            source_language=source,
+            target_language=target,
+        )
+        self._asr.set_language(self._language_config.source_language)
+        await self._emit({
+            "type": "status",
+            "code": "CONFIG_UPDATED",
+            "message": (
+                "Language config updated: "
+                f"{self._language_config.source_label} -> "
+                f"{self._language_config.target_label}"
+            ),
+            "session_id": self.session_id,
+            "source_language": self._language_config.source_language,
+            "target_language": self._language_config.target_language,
+        })
+
     async def _audio_worker(self) -> None:
         while True:
             audio_chunk, received_at = await self._audio_queue.get()
             try:
+                self._record_audio_queue_depth()
+                queue_wait_ms = round((asyncio.get_running_loop().time() - received_at) * 1000)
+                self._diagnostics.record_audio_queue_wait(queue_wait_ms)
                 await self._process_audio_now(audio_chunk, received_at)
             except asyncio.CancelledError:
                 raise
@@ -163,6 +224,8 @@ class Pipeline:
             id=f"{self.session_id}_{segment_index}",
             text_asr=text,
             confidence=confidence,
+            source_language=self._language_config.source_language,
+            target_language=self._language_config.target_language,
             status="draft",
         )
         self._sentence_count += 1
@@ -182,6 +245,8 @@ class Pipeline:
             "text": segment.text_asr,
             "confidence": segment.confidence,
             "latency_ms": capture_to_asr_ms,
+            "source_language": segment.source_language,
+            "target_language": segment.target_language,
         })
 
         context_window = await self._ctx.get_window(self.session_id)
@@ -325,9 +390,22 @@ class Pipeline:
             "diagnostics": self._diagnostics.snapshot(),
         })
 
+    async def _emit_periodic_diagnostics(self, now: float) -> None:
+        if now - self._last_diagnostics_emit_at < settings.diagnostics_emit_interval_seconds:
+            return
+
+        self._last_diagnostics_emit_at = now
+        await self._emit_diagnostics()
+
     async def _emit(self, message: dict) -> None:
         if self._on_message:
             await self._on_message(message)
+
+    def _record_audio_queue_depth(self) -> None:
+        self._diagnostics.record_audio_queue_depth(
+            self._audio_queue.qsize(),
+            self._audio_queue.maxsize,
+        )
 
     def _revision_to_message(self, revision: RevisionResult) -> dict:
         message = {

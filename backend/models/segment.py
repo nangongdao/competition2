@@ -22,6 +22,8 @@ class Segment:
     id: str
     text_asr: str
     confidence: float
+    source_language: str = "en"
+    target_language: str = "zh-CN"
     text_translated: str = ""
     status: Literal["draft", "final", "revised"] = "draft"
     timestamp: float = field(default_factory=time.time)
@@ -80,7 +82,7 @@ class ContextWindow:
         recent = self.get_recent(max_sentences)
         lines = []
         for seg in recent:
-            lines.append(f"[EN] {seg.text_asr}")
+            lines.append(f"[{seg.source_language.upper()}] {seg.text_asr}")
             if seg.text_translated:
-                lines.append(f"[ZH] {seg.text_translated}")
+                lines.append(f"[{seg.target_language.upper()}] {seg.text_translated}")
         return "\n".join(lines)

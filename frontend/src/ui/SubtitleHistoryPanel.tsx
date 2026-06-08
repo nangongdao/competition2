@@ -1,13 +1,21 @@
 import React, { useEffect, useMemo, useState } from 'react'
 
+import {
+  formatLearningNotesMarkdown,
+  formatPlainTranscript,
+  formatSrtSubtitles,
+  formatVttSubtitles,
+  hasExportableSubtitles,
+} from '../subtitle/subtitle-export'
+import type { UiText } from '../i18n'
 import type { SubtitleEntry } from '../types'
 
 
 interface SubtitleHistoryPanelProps {
   entries: SubtitleEntry[]
   isOpen: boolean
-  transcriptText: string
   diagnosticsText: string
+  uiText: UiText
   onClose: () => void
 }
 
@@ -83,11 +91,12 @@ const footerStyle: React.CSSProperties = {
 export const SubtitleHistoryPanel: React.FC<SubtitleHistoryPanelProps> = ({
   entries,
   isOpen,
-  transcriptText,
   diagnosticsText,
+  uiText,
   onClose,
 }) => {
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'failed'>('idle')
+  const text = uiText.history
 
   const stats = useMemo(() => {
     return entries.reduce(
@@ -133,7 +142,7 @@ export const SubtitleHistoryPanel: React.FC<SubtitleHistoryPanelProps> = ({
   }
 
   const recentEntries = entries.slice(-30).reverse()
-  const canExport = transcriptText.trim().length > 0
+  const canExport = hasExportableSubtitles(entries)
   const canExportDiagnostics = diagnosticsText.trim().length > 0
 
   const handleCopy = async (): Promise<void> => {
@@ -141,6 +150,7 @@ export const SubtitleHistoryPanel: React.FC<SubtitleHistoryPanelProps> = ({
       return
     }
 
+    const transcriptText = formatPlainTranscript(entries)
     try {
       await navigator.clipboard.writeText(transcriptText)
       setCopyStatus('copied')
@@ -151,21 +161,52 @@ export const SubtitleHistoryPanel: React.FC<SubtitleHistoryPanelProps> = ({
     }
   }
 
-  const handleDownload = (): void => {
+  const handleDownloadTranscript = (): void => {
     if (!canExport) {
       return
     }
 
-    const blob = new Blob([transcriptText], { type: 'text/plain;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `ai-interpreter-transcript-${Date.now()}.txt`
-    link.style.display = 'none'
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    URL.revokeObjectURL(url)
+    downloadTextFile(
+      formatPlainTranscript(entries),
+      `ai-interpreter-transcript-${Date.now()}.txt`,
+      'text/plain;charset=utf-8',
+    )
+  }
+
+  const handleDownloadSrt = (): void => {
+    if (!canExport) {
+      return
+    }
+
+    downloadTextFile(
+      formatSrtSubtitles(entries),
+      `ai-interpreter-subtitles-${Date.now()}.srt`,
+      'application/x-subrip;charset=utf-8',
+    )
+  }
+
+  const handleDownloadVtt = (): void => {
+    if (!canExport) {
+      return
+    }
+
+    downloadTextFile(
+      formatVttSubtitles(entries),
+      `ai-interpreter-subtitles-${Date.now()}.vtt`,
+      'text/vtt;charset=utf-8',
+    )
+  }
+
+  const handleDownloadNotes = (): void => {
+    if (!canExport) {
+      return
+    }
+
+    downloadTextFile(
+      formatLearningNotesMarkdown(entries),
+      `ai-interpreter-notes-${Date.now()}.md`,
+      'text/markdown;charset=utf-8',
+    )
   }
 
   const handleDownloadDiagnostics = (): void => {
@@ -173,21 +214,16 @@ export const SubtitleHistoryPanel: React.FC<SubtitleHistoryPanelProps> = ({
       return
     }
 
-    const blob = new Blob([diagnosticsText], { type: 'text/plain;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `ai-interpreter-diagnostics-${Date.now()}.txt`
-    link.style.display = 'none'
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    URL.revokeObjectURL(url)
+    downloadTextFile(
+      diagnosticsText,
+      `ai-interpreter-diagnostics-${Date.now()}.txt`,
+      'text/plain;charset=utf-8',
+    )
   }
 
   return (
     <section
-      aria-label="Subtitle history"
+      aria-label={text.ariaLabel}
       role="dialog"
       aria-modal="false"
       style={panelStyle}
@@ -195,16 +231,16 @@ export const SubtitleHistoryPanel: React.FC<SubtitleHistoryPanelProps> = ({
       <div style={headerStyle}>
         <div>
           <div style={{ color: '#ffffff', fontSize: '15px', fontWeight: 800 }}>
-            Subtitle history
+            {text.title}
           </div>
           <div style={{ color: '#91a0b3', fontSize: '12px', marginTop: '4px' }}>
-            Latest {recentEntries.length} of {entries.length} entries
+            {text.latestSummary(recentEntries.length, entries.length)}
           </div>
         </div>
         <div style={{ borderRadius: '12px', overflow: 'hidden' }}>
           <button
             type="button"
-            aria-label="Close subtitle history"
+            aria-label={text.closeAriaLabel}
             style={{
               ...tapSafeButtonStyle,
               minHeight: '44px',
@@ -214,15 +250,15 @@ export const SubtitleHistoryPanel: React.FC<SubtitleHistoryPanelProps> = ({
             }}
             onClick={onClose}
           >
-            Close
+            {text.close}
           </button>
         </div>
       </div>
 
       <div style={summaryStyle}>
-        <SummaryStat label="Source" value={stats.source} />
-        <SummaryStat label="Translated" value={stats.translated} />
-        <SummaryStat label="Revised" value={stats.revised} />
+        <SummaryStat label={text.source} value={stats.source} />
+        <SummaryStat label={text.translated} value={stats.translated} />
+        <SummaryStat label={text.revised} value={stats.revised} />
       </div>
 
       <div style={listStyle}>
@@ -235,7 +271,7 @@ export const SubtitleHistoryPanel: React.FC<SubtitleHistoryPanelProps> = ({
               fontSize: '13px',
             }}
           >
-            No subtitles yet.
+            {text.empty}
           </div>
         ) : recentEntries.map((entry) => (
           <article
@@ -269,7 +305,9 @@ export const SubtitleHistoryPanel: React.FC<SubtitleHistoryPanelProps> = ({
               <span>{formatTime(entry.timestamp)}</span>
               {entry.isRevised ? (
                 <span style={{ color: '#f4c84c', fontWeight: 700 }}>
-                  {entry.revisionReason === 'asr_correction' ? 'ASR revised' : 'Translation revised'}
+                  {entry.revisionReason === 'asr_correction'
+                    ? text.asrRevised
+                    : text.translationRevised}
                 </span>
               ) : null}
             </div>
@@ -305,7 +343,11 @@ export const SubtitleHistoryPanel: React.FC<SubtitleHistoryPanelProps> = ({
               void handleCopy()
             }}
           >
-            {copyStatus === 'copied' ? 'Copied' : copyStatus === 'failed' ? 'Copy failed' : 'Copy TXT'}
+            {copyStatus === 'copied'
+              ? text.copied
+              : copyStatus === 'failed'
+                ? text.copyFailed
+                : text.copyTxt}
           </button>
         </div>
         <div style={{ borderRadius: '12px', overflow: 'hidden' }}>
@@ -320,11 +362,26 @@ export const SubtitleHistoryPanel: React.FC<SubtitleHistoryPanelProps> = ({
               color: canExport ? '#10141b' : '#718093',
               cursor: canExport ? 'pointer' : 'not-allowed',
             }}
-            onClick={handleDownload}
+            onClick={handleDownloadTranscript}
           >
-            Download TXT
+            {text.downloadTxt}
           </button>
         </div>
+        <ExportButton
+          label={text.downloadSrt}
+          disabled={!canExport}
+          onClick={handleDownloadSrt}
+        />
+        <ExportButton
+          label={text.downloadVtt}
+          disabled={!canExport}
+          onClick={handleDownloadVtt}
+        />
+        <ExportButton
+          label={text.notesMd}
+          disabled={!canExport}
+          onClick={handleDownloadNotes}
+        />
         <div style={{ gridColumn: '1 / -1', borderRadius: '12px', overflow: 'hidden' }}>
           <button
             type="button"
@@ -340,7 +397,7 @@ export const SubtitleHistoryPanel: React.FC<SubtitleHistoryPanelProps> = ({
             }}
             onClick={handleDownloadDiagnostics}
           >
-            Download diagnostics
+            {text.downloadDiagnostics}
           </button>
         </div>
       </div>
@@ -371,10 +428,53 @@ const SummaryStat: React.FC<SummaryStatProps> = ({ label, value }) => (
 )
 
 
+interface ExportButtonProps {
+  label: string
+  disabled: boolean
+  onClick: () => void
+}
+
+
+const ExportButton: React.FC<ExportButtonProps> = ({ label, disabled, onClick }) => (
+  <div style={{ borderRadius: '12px', overflow: 'hidden' }}>
+    <button
+      type="button"
+      disabled={disabled}
+      style={{
+        ...tapSafeButtonStyle,
+        width: '100%',
+        minHeight: '44px',
+        background: disabled ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.08)',
+        color: disabled ? '#718093' : '#d9e1eb',
+        border: '1px solid rgba(255,255,255,0.1)',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+      }}
+      onClick={onClick}
+    >
+      {label}
+    </button>
+  </div>
+)
+
+
 function formatTime(timestamp: number): string {
   return new Date(timestamp).toLocaleTimeString([], {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
   })
+}
+
+
+function downloadTextFile(content: string, filename: string, mimeType: string): void {
+  const blob = new Blob([content], { type: mimeType })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.style.display = 'none'
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
 }

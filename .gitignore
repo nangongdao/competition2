@@ -1,8 +1,11 @@
 .DS_Store
 Thumbs.db
 
+# Local environment secrets. Keep tracked templates such as .env.example.
 .env
 .env.local
+backend/.env
+backend/.env.local
 .venv/
 venv/
 __pycache__/
@@ -12,6 +15,11 @@ __pycache__/
 
 node_modules/
 dist/
+logs/
+.npm-cache/
+.electron-cache/
+
+config/desktop-settings.local.json
 
 .trellis/.runtime/
 .trellis/workspace/

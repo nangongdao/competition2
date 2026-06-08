@@ -1,4 +1,5 @@
 import type { RevisionReason, SubtitleEntry, SubtitleMode } from '../types'
+import { formatPlainTranscript } from './subtitle-export'
 
 
 export class SubtitleStore {
@@ -68,6 +69,10 @@ export class SubtitleStore {
     this._notify()
   }
 
+  getEntry(segmentId: string): SubtitleEntry | undefined {
+    return this._findEntry(segmentId)
+  }
+
   reviseSubtitle(
     segmentId: string,
     newText: string,
@@ -111,18 +116,7 @@ export class SubtitleStore {
   }
 
   exportTranscript(): string {
-    return this._history
-      .filter((entry) => entry.sourceText || entry.translatedText)
-      .map((entry, index) => {
-        const time = this._formatTimestamp(entry.timestamp)
-        const revisionLabel = entry.isRevised ? ` [revised:${entry.revisionReason ?? 'unknown'}]` : ''
-        return [
-          `${index + 1}. ${time}${revisionLabel}`,
-          `EN: ${entry.sourceText || '-'}`,
-          `ZH: ${entry.translatedText || '-'}`,
-        ].join('\n')
-      })
-      .join('\n\n')
+    return formatPlainTranscript(this._history)
   }
 
   private _getOrCreateEntry(segmentId: string, timestamp = Date.now()): SubtitleEntry {
@@ -160,11 +154,4 @@ export class SubtitleStore {
     this._listeners.forEach((listener) => listener())
   }
 
-  private _formatTimestamp(timestamp: number): string {
-    return new Date(timestamp).toLocaleTimeString([], {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    })
-  }
 }

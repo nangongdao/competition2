@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "test": "node --test --import tsx src/audio/AudioCapture.test.ts src/audio/TtsPlayer.test.ts src/desktop/overlay.test.ts src/desktop/settings.test.ts src/desktop/web-overlay.test.ts src/i18n.test.ts src/network/WsClient.test.ts src/network/ws-url.test.ts src/subtitle/subtitle-export.test.ts",
     "build": "tsc && vite build",
+    "desktop:window": "electron electron/main.cjs",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -17,7 +19,9 @@
     "@types/react": "^18.2.43",
     "@types/react-dom": "^18.2.17",
     "@vitejs/plugin-react": "^4.2.1",
+    "electron": "^42.3.3",
+    "tsx": "^4.22.4",
     "typescript": "^5.3.3",
-    "vite": "^5.0.8"
+    "vite": "^7.3.5"
   }
 }

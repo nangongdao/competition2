@@ -23,6 +23,8 @@
 | [orpc-usage.md](./orpc-usage.md)                     | Type-safe API calls, React Query integration         | **Must Read** |
 | [hooks.md](./hooks.md)                               | Query and mutation hook patterns                     | Reference     |
 | [api-integration.md](./api-integration.md)           | oRPC client, real-time, AI streaming                 | Reference     |
+| [tts-playback.md](./tts-playback.md)                 | Local browser/Electron TTS playback queue            | Reference     |
+| [web-floating-subtitles.md](./web-floating-subtitles.md) | Browser external subtitle window and snapshot sync | Reference     |
 | [state-management.md](./state-management.md)         | URL state with nuqs, React Context patterns          | Reference     |
 | [directory-structure.md](./directory-structure.md)    | Project structure and module conventions             | Reference     |
 | [type-safety.md](./type-safety.md)                   | TypeScript guidelines, type inference, Zod           | Reference     |
@@ -47,6 +49,8 @@
 | Task                        | Document                                           |
 | --------------------------- | -------------------------------------------------- |
 | Make type-safe API calls    | [orpc-usage.md](./orpc-usage.md)                   |
+| Maintain live audio capture | [api-integration.md](./api-integration.md)         |
+| Maintain local voice playback | [tts-playback.md](./tts-playback.md)              |
 | Create custom hooks         | [hooks.md](./hooks.md)                             |
 | Manage application state    | [state-management.md](./state-management.md)       |
 | Build UI components         | [components.md](./components.md)                   |

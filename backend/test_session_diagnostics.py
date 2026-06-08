@@ -16,6 +16,9 @@ class SessionDiagnosticsTests(unittest.TestCase):
         diagnostics.record_audio_chunk(3200)
         diagnostics.record_audio_chunk(1600)
         diagnostics.record_dropped_audio_chunk()
+        diagnostics.record_audio_queue_depth(2, 16)
+        diagnostics.record_audio_queue_depth(5, 16)
+        diagnostics.record_audio_queue_wait(32)
         diagnostics.record_asr_segment(2100)
         diagnostics.record_translation_segment(
             first_token_latency_ms=250,
@@ -36,6 +39,9 @@ class SessionDiagnosticsTests(unittest.TestCase):
         self.assertEqual(snapshot["audio_chunks_received"], 2)
         self.assertEqual(snapshot["audio_bytes_received"], 4800)
         self.assertEqual(snapshot["audio_chunks_dropped"], 1)
+        self.assertEqual(snapshot["audio_queue_depth"], 5)
+        self.assertEqual(snapshot["audio_queue_max_depth"], 5)
+        self.assertEqual(snapshot["audio_queue_capacity"], 16)
         self.assertEqual(snapshot["asr_segments"], 1)
         self.assertEqual(snapshot["translation_segments"], 1)
         self.assertEqual(snapshot["revision_segments"], 1)
@@ -45,6 +51,7 @@ class SessionDiagnosticsTests(unittest.TestCase):
         self.assertEqual(snapshot["revision_counts"]["asr_correction"], 1)
         self.assertEqual(snapshot["revision_sources"]["audio_redecode"], 1)
         self.assertEqual(snapshot["revision_triggers"]["low_confidence"], 1)
+        self.assertEqual(snapshot["latency"]["audio_queue_wait_ms"]["avg_ms"], 32)
         self.assertEqual(snapshot["latency"]["capture_to_asr_ms"]["avg_ms"], 2100)
         self.assertEqual(snapshot["latency"]["asr_to_first_token_ms"]["max_ms"], 250)
         self.assertEqual(snapshot["latency"]["asr_to_translation_final_ms"]["count"], 1)

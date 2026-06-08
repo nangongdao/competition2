@@ -1,4 +1,4 @@
-import type { ClientDiagnostics, ServerMessage } from '../types'
+import type { ClientDiagnostics, LanguageConfig, ServerMessage } from '../types'
 
 
 export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'
@@ -29,6 +29,7 @@ export class WsClient {
   private _reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private _intentionalClose = false
   private _diagnostics: ClientDiagnostics
+  private _languageConfig: LanguageConfig | null = null
 
   constructor(baseUrl: string) {
     this._baseUrl = baseUrl
@@ -36,6 +37,7 @@ export class WsClient {
     this._url = appendSessionId(baseUrl, sessionId)
     this._diagnostics = {
       sessionId,
+      captureBackend: null,
       sentAudioChunks: 0,
       droppedAudioChunks: 0,
       reconnectAttempts: 0,
@@ -76,6 +78,7 @@ export class WsClient {
         this._retryCount = 0
         this._diagnostics.connectionOpens += 1
         this._notifyDiagnostics()
+        this._sendLanguageConfigIfOpen()
         this._setState('connected')
       }
 
@@ -118,6 +121,11 @@ export class WsClient {
     }
   }
 
+  setLanguageConfig(config: LanguageConfig): void {
+    this._languageConfig = { ...config }
+    this._sendLanguageConfigIfOpen()
+  }
+
   disconnect(): void {
     this._intentionalClose = true
     this._clearReconnect()
@@ -135,6 +143,7 @@ export class WsClient {
     this._retryCount = 0
     this._diagnostics = {
       sessionId,
+      captureBackend: null,
       sentAudioChunks: 0,
       droppedAudioChunks: 0,
       reconnectAttempts: 0,
@@ -191,6 +200,18 @@ export class WsClient {
 
   private _notifyDiagnostics(): void {
     this._callbacks?.onDiagnosticsChange?.(this.diagnostics)
+  }
+
+  private _sendLanguageConfigIfOpen(): void {
+    if (!this._languageConfig || !this._ws || this._ws.readyState !== WebSocket.OPEN) {
+      return
+    }
+
+    this.sendControl({
+      type: 'config',
+      language: this._languageConfig.sourceLanguage,
+      target_language: this._languageConfig.targetLanguage,
+    })
   }
 }
 
