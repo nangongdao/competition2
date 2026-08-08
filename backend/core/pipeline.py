@@ -35,13 +35,23 @@ class Pipeline:
         nmt: NMTService,
         ctx_manager: ContextManager,
         revision: Optional[RevisionService] = None,
+        reconnect_token: str | None = None,
     ) -> None:
         self.session_id = session_id
         self._asr = asr
         self._nmt = nmt
         self._ctx = ctx_manager
         self._revision = revision
+        self._reconnect_token = reconnect_token
         self._diagnostics = SessionDiagnostics(session_id=session_id)
+        #: 说话人分离服务（默认关闭；开启时为每个 segment 标注 speaker_id）
+        self._diarization = None
+        if settings.diarization_enabled:
+            from services.diarization_service import DiarizationService
+
+            self._diarization = DiarizationService(
+                similarity_threshold=settings.diarization_similarity_threshold,
+            )
         self._language_config = LanguageConfig.from_values(
             settings.source_language,
             settings.target_language,
@@ -60,6 +70,15 @@ class Pipeline:
         )
         self._record_audio_queue_depth()
 
+        #: 进行中的翻译任务，键为 segment_id，用于取消与等待
+        self._translation_tasks: dict[str, asyncio.Task[None]] = {}
+        #: 限制并发翻译数，避免瞬时打爆上游配额
+        self._translation_semaphore = asyncio.Semaphore(
+            settings.max_concurrent_translations,
+        )
+        #: 后台任务集合（如手动修正），用于 stop 时统一取消
+        self._background_tasks: set[asyncio.Task[None]] = set()
+
         self._asr.set_on_partial(self._handle_asr_partial)
         self._asr.set_on_final(self._handle_asr_final)
         self._asr.set_language(self._language_config.source_language)
@@ -74,12 +93,16 @@ class Pipeline:
         self._audio_worker_task = asyncio.create_task(self._audio_worker())
 
         status_code = "SESSION_RECONNECTED" if reconnect_count else "SESSION_STARTED"
-        await self._emit({
+        status_message: dict = {
             "type": "status",
             "code": status_code,
             "message": f"Session {self.session_id} is ready",
             "session_id": self.session_id,
-        })
+        }
+        # 下发重连令牌，客户端在重连时以此证明会话所有权。
+        if self._reconnect_token:
+            status_message["reconnect_token"] = self._reconnect_token
+        await self._emit(status_message)
         await self._emit_diagnostics()
         self._last_diagnostics_emit_at = asyncio.get_running_loop().time()
         logger.info("Pipeline started for session {}", self.session_id)
@@ -96,12 +119,39 @@ class Pipeline:
                 await self._audio_worker_task
             self._audio_worker_task = None
 
+        # 给在途翻译一个短暂的收尾窗口，超时则取消
+        if self._translation_tasks:
+            pending = list(self._translation_tasks.values())
+            done, still_pending = await asyncio.wait(pending, timeout=3.0)
+            for task in still_pending:
+                task.cancel()
+            await asyncio.gather(*still_pending, return_exceptions=True)
+
+        # 取消未完成的临时后台任务（如手动修正）
+        if self._background_tasks:
+            tasks = list(self._background_tasks)
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            self._background_tasks.clear()
+
         self._record_audio_queue_depth()
         self._asr.reset_session_state()
         self._diagnostics.finish()
         await self._emit_diagnostics()
         await self._ctx.close_session(self.session_id)
         logger.info("Pipeline stopped for session {}", self.session_id)
+
+    async def wait_for_pending_translations(self, timeout: float = 5.0) -> None:
+        """等待在途翻译任务完成（测试与优雅关停使用）。"""
+        pending = [
+            task
+            for task in self._translation_tasks.values()
+            if not task.done()
+        ]
+        if not pending:
+            return
+        await asyncio.wait(pending, timeout=timeout)
 
     async def process_audio(self, audio_chunk: bytes) -> None:
         if not self._running:
@@ -130,7 +180,17 @@ class Pipeline:
             await self._emit_diagnostics()
 
     async def trigger_manual_revision(self) -> None:
-        await self._check_revision(force=True, trigger_segment=None, trigger="manual")
+        """手动触发一次全文修正。
+
+        修正会调用上游 LLM，可能耗时数秒，不能阻塞控制消息接收循环，
+        因此丢给后台任务执行，并由 stop() 统一取消。
+        """
+        task = asyncio.create_task(
+            self._check_revision(force=True, trigger_segment=None, trigger="manual"),
+            name=f"manual-revision-{self.session_id}",
+        )
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
         await self._emit_diagnostics()
 
     async def emit_diagnostics(self) -> None:
@@ -139,6 +199,24 @@ class Pipeline:
     @property
     def language_config(self) -> LanguageConfig:
         return self._language_config
+
+    async def update_glossary(self, entries: list[dict]) -> None:
+        """更新会话术语表（领域自适应）。
+
+        Args:
+            entries: 术语表条目字典列表，形如
+                [{"source": "K8s", "target": "Kubernetes", "keep_original": false}, ...]。
+        """
+        from services.glossary import parse_glossary_json
+
+        parsed = parse_glossary_json(entries)
+        self._nmt.set_glossary(parsed)
+        await self._emit({
+            "type": "status",
+            "code": "GLOSSARY_UPDATED",
+            "message": f"Glossary updated with {len(parsed)} entries",
+            "session_id": self.session_id,
+        })
 
     async def update_config(
         self,
@@ -210,6 +288,11 @@ class Pipeline:
         })
 
     async def _handle_asr_final(self, text: str, confidence: float) -> None:
+        """ASR 出最终结果的回调。
+
+        只做轻量工作（落库 + 广播 ASR 结果），翻译与修正交给后台任务，
+        避免阻塞 ASR 处理下一句 —— 这是延迟不累积的关键。
+        """
         if not text.strip():
             return
 
@@ -230,9 +313,16 @@ class Pipeline:
         )
         self._sentence_count += 1
         self._diagnostics.record_asr_segment(capture_to_asr_ms)
-        await self._ctx.add_segment(self.session_id, segment)
 
         segment_audio = self._asr.get_last_audio_chunk()
+        # 说话人分离：先识别并标注，再落库，保证 speaker_id 持久化
+        if self._diarization is not None:
+            import numpy as np
+
+            samples = np.frombuffer(segment_audio, dtype=np.float32) if segment_audio else np.empty(0)
+            segment.speaker_id = self._diarization.identify(samples)
+
+        await self._ctx.add_segment(self.session_id, segment)
         await self._ctx.save_audio_chunk(
             self.session_id,
             segment.id,
@@ -242,13 +332,60 @@ class Pipeline:
         await self._emit({
             "type": "asr_final",
             "segment_id": segment.id,
+            "segment_index": segment_index,
             "text": segment.text_asr,
             "confidence": segment.confidence,
             "latency_ms": capture_to_asr_ms,
             "source_language": segment.source_language,
             "target_language": segment.target_language,
+            "speaker_id": segment.speaker_id,
         })
 
+        # 翻译链路异步化：立即返回，不阻塞下一句 ASR
+        task = asyncio.create_task(
+            self._translate_and_revise(segment, asr_final_at),
+            name=f"translate-{segment.id}",
+        )
+        self._translation_tasks[segment.id] = task
+        task.add_done_callback(
+            lambda finished: self._translation_tasks.pop(segment.id, None)
+        )
+
+    async def _translate_and_revise(self, segment: Segment, asr_final_at: float) -> None:
+        """后台执行翻译与修正。
+
+        Args:
+            segment: 待翻译的语音片段。
+            asr_final_at: ASR 出结果的时刻，用于计算端到端延迟。
+        """
+        async with self._translation_semaphore:
+            try:
+                await self._run_translation(segment, asr_final_at)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.error("Translation failed for {}: {}", segment.id, exc)
+                # 降级：至少让用户看到原文（配合 ARCH-02 的重试+降级）
+                await self._emit({
+                    "type": "translation_token",
+                    "segment_id": segment.id,
+                    "segment_index": self._segment_index_of(segment),
+                    "token": f"[未翻译] {segment.text_asr}",
+                    "is_final": True,
+                })
+
+            try:
+                await self._run_revision(segment)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.error("Revision failed for {}: {}", segment.id, exc)
+            finally:
+                await self._emit_diagnostics()
+
+    async def _run_translation(self, segment: Segment, asr_final_at: float) -> None:
+        """流式翻译单个片段并落库。"""
+        loop = asyncio.get_running_loop()
         context_window = await self._ctx.get_window(self.session_id)
         translated_parts: list[str] = []
         first_token_latency_ms: int | None = None
@@ -263,6 +400,7 @@ class Pipeline:
             await self._emit({
                 "type": "translation_token",
                 "segment_id": segment.id,
+                "segment_index": self._segment_index_of(segment),
                 "token": "" if is_final else token,
                 "is_final": is_final,
             })
@@ -276,6 +414,12 @@ class Pipeline:
         )
         await self._ctx.update_segment(self.session_id, segment)
 
+    async def _run_revision(self, segment: Segment) -> None:
+        """对单个片段执行 ASR 修正与周期性的译文润色。"""
+        if not self._revision:
+            return
+
+        context_window = await self._ctx.get_window(self.session_id)
         cached_audio = await self._ctx.get_audio_chunk(self.session_id, segment.id)
         asr_revision = await self._revision.check_asr_correction(
             segment,
@@ -284,7 +428,7 @@ class Pipeline:
             self._asr,
             audio_chunk=cached_audio,
             trigger="low_confidence",
-        ) if self._revision else None
+        )
         self._consume_revision_api_counts()
 
         if asr_revision:
@@ -302,7 +446,17 @@ class Pipeline:
             await self._emit(self._revision_to_message(asr_revision))
 
         await self._check_revision(force=False, trigger_segment=segment, trigger="asr_final")
-        await self._emit_diagnostics()
+
+    @staticmethod
+    def _segment_index_of(segment: Segment) -> int:
+        """从 segment.id 解析单调递增的片段序号。
+
+        segment.id 形如 "{session_id}_{index}"，序号恒为末段，直接复用。
+        """
+        try:
+            return int(segment.id.rsplit("_", 1)[-1])
+        except (ValueError, IndexError):
+            return 0
 
     def _reset_silence_timer(self) -> None:
         if self._silence_task:

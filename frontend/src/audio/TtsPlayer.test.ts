@@ -148,6 +148,52 @@ describe('TtsPlayer', () => {
     assert.equal(player.diagnostics.queueLength, 0)
     assert.equal(speech.cancelCalls, 1)
   })
+
+  it('speaks streaming sentences per segment without waiting for final', () => {
+    const speech = installSpeechMocks()
+    const player = new TtsPlayer()
+
+    player.setEnabled(true)
+    player.speakStreamSentence('seg-1', '第一句。', 0)
+    player.speakStreamSentence('seg-1', '第二句。', 1)
+
+    assert.equal(speech.spoken.length, 1)
+    assert.equal(speech.spoken[0]?.text, '第一句。')
+    assert.equal(player.diagnostics.queueLength, 1)
+
+    speech.finishSpokenAt(0)
+    assert.equal(speech.spoken.length, 2)
+    assert.equal(speech.spoken[1]?.text, '第二句。')
+    assert.equal(player.diagnostics.spokenUtterances, 1)
+  })
+
+  it('skips duplicate streaming sentence with the same index', () => {
+    const speech = installSpeechMocks()
+    const player = new TtsPlayer()
+
+    player.setEnabled(true)
+    player.speakStreamSentence('seg-1', '第一句。', 0)
+    player.speakStreamSentence('seg-1', '第一句。', 0)
+
+    assert.equal(speech.spoken.length, 1)
+    assert.equal(player.diagnostics.skippedUtterances, 1)
+  })
+
+  it('streams sentences from two segments in order', () => {
+    const speech = installSpeechMocks()
+    const player = new TtsPlayer()
+
+    player.setEnabled(true)
+    player.speakStreamSentence('seg-a', '甲。', 0)
+    player.speakStreamSentence('seg-b', '乙。', 0)
+
+    assert.equal(speech.spoken.length, 1)
+    assert.equal(speech.spoken[0]?.text, '甲。')
+    assert.equal(player.diagnostics.queueLength, 1)
+
+    speech.finishSpokenAt(0)
+    assert.equal(speech.spoken[1]?.text, '乙。')
+  })
 })
 
 

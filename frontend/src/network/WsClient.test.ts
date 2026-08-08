@@ -68,7 +68,10 @@ describe('WsClient', () => {
     const socket = latestSocket()
     socket.open()
 
-    assert.equal(socket.url, 'ws://localhost:8000/api/v1/ws/translate/config-t')
+    assert.equal(
+      socket.url,
+      'ws://localhost:8000/api/v1/ws/translate/config-test-0000-0000-0000-000000000000',
+    )
     assert.deepEqual(JSON.parse(readSentText(socket, 0)), {
       type: 'config',
       language: 'ja',

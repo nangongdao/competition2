@@ -37,6 +37,17 @@ class FakeASRService:
         self._on_final: Optional[FinalCallback] = None
         self._last_audio_chunk = b""
 
+    async def wait_until_processed(self, count: int, timeout: float = 1.0) -> None:
+        """轮询等待音频缓冲被处理到指定次数。"""
+        deadline = asyncio.get_running_loop().time() + timeout
+        while len(self.processed_chunks) < count:
+            if asyncio.get_running_loop().time() >= deadline:
+                raise AssertionError(
+                    f"Timed out waiting for {count} processed chunks; "
+                    f"got {len(self.processed_chunks)}"
+                )
+            await asyncio.sleep(0.01)
+
     def set_on_partial(self, callback: PartialCallback) -> None:
         self._on_partial = callback
 
@@ -79,6 +90,22 @@ class FakeNMTService:
         self.segments.append(current)
         self.last_context = context
 
+        for token in self.tokens:
+            yield token
+        yield "<FINAL>"
+
+
+class BlockingNMTService(FakeNMTService):
+    """翻译时先等待 release_event 再产出 token，用于模拟慢翻译。"""
+
+    def __init__(self, tokens: list[str], release_event: asyncio.Event) -> None:
+        super().__init__(tokens)
+        self.release_event = release_event
+
+    async def translate_stream(self, context: ContextWindow, current: Segment):
+        self.translation_calls += 1
+        self.segments.append(current)
+        await self.release_event.wait()
         for token in self.tokens:
             yield token
         yield "<FINAL>"
@@ -244,6 +271,8 @@ class PipelineTests(unittest.IsolatedAsyncioTestCase):
         await pipeline.start()
         await pipeline.process_audio(b"pcm-audio")
         await asyncio.wait_for(processed_event.wait(), timeout=1)
+        # 翻译已异步化：显式等待在途翻译任务，避免时序竞争
+        await pipeline.wait_for_pending_translations(timeout=1)
 
         segment = ctx.window.get_by_id("flow-test_0")
         self.assertIsNotNone(segment)
@@ -337,6 +366,111 @@ class PipelineTests(unittest.IsolatedAsyncioTestCase):
             any(message.get("code") == "CONFIG_UPDATED" for message in status_messages),
         )
 
+        await pipeline.stop()
+
+
+class PipelineAsyncTests(unittest.IsolatedAsyncioTestCase):
+    """验证翻译异步化：ASR 回调不再阻塞下一句的处理。"""
+
+    def setUp(self) -> None:
+        self.original_revision_enabled = settings.revision_enabled
+        settings.revision_enabled = False
+
+    def tearDown(self) -> None:
+        settings.revision_enabled = self.original_revision_enabled
+
+    async def test_asr_callback_does_not_block_next_sentence(self) -> None:
+        release = asyncio.Event()
+        messages: list[dict] = []
+        asr = FakeASRService(final_text="hello", confidence=0.9)
+        nmt = BlockingNMTService(["译"], release)
+        pipeline = Pipeline(
+            session_id="async-test",
+            asr=asr,
+            nmt=nmt,
+            ctx_manager=FakeContextManager(),
+            revision=None,
+        )
+        pipeline.set_on_message(collect_messages(messages))
+
+        await pipeline.start()
+        await pipeline.process_audio(b"pcm-1")
+        await pipeline.process_audio(b"pcm-2")
+        await asr.wait_until_processed(2)
+
+        # 第二句的 ASR 结果应已发出，而第一句翻译仍在阻塞 —— 证明未阻塞
+        asr_final_events = [
+            message
+            for message in messages
+            if message.get("type") == "asr_final"
+        ]
+        self.assertGreaterEqual(len(asr_final_events), 2)
+        self.assertEqual(
+            [message.get("segment_index") for message in asr_final_events],
+            [0, 1],
+        )
+
+        release.set()
+        await pipeline.wait_for_pending_translations(timeout=1)
+        await pipeline.stop()
+
+    async def test_out_of_order_translation_results_carry_index(self) -> None:
+        original_max_concurrent = settings.max_concurrent_translations
+        settings.max_concurrent_translations = 10
+        try:
+            await self._run_out_of_order_scenario()
+        finally:
+            settings.max_concurrent_translations = original_max_concurrent
+
+    async def _run_out_of_order_scenario(self) -> None:
+        release = asyncio.Event()
+        messages: list[dict] = []
+
+        # 慢翻译（第一句）+ 快翻译（第三句）：让第三句先完成
+        slow_nmt = BlockingNMTService(["慢"], release)
+        fast_nmt = FakeNMTService(["快"])
+
+        asr = FakeASRService(final_text="sentence", confidence=0.9)
+        ctx = FakeContextManager()
+
+        pipeline = Pipeline(
+            session_id="order-test",
+            asr=asr,
+            nmt=slow_nmt,
+            ctx_manager=ctx,
+            revision=None,
+        )
+        pipeline.set_on_message(collect_messages(messages))
+
+        await pipeline.start()
+        await pipeline.process_audio(b"pcm-1")  # 触发第一句（慢翻译）
+        await pipeline.process_audio(b"pcm-2")  # 触发第二句（慢翻译）
+        await asr.wait_until_processed(2)
+
+        # 等两个慢翻译任务真正进入 translate_stream 并被 release 阻塞
+        deadline = asyncio.get_running_loop().time() + 1.0
+        while slow_nmt.translation_calls < 2:
+            if asyncio.get_running_loop().time() >= deadline:
+                raise AssertionError("Slow translations did not start in time")
+            await asyncio.sleep(0.01)
+
+        # 慢翻译任务已阻塞：替换为快翻译处理第三句
+        pipeline._nmt = fast_nmt
+        await pipeline.process_audio(b"pcm-3")  # 触发第三句（快翻译）
+        await asr.wait_until_processed(3)
+
+        # 快翻译先完成，其 translation_token 带正确的 segment_index
+        fast_final = [
+            message
+            for message in messages
+            if message.get("type") == "translation_token"
+            and message.get("is_final") is True
+        ]
+        self.assertTrue(fast_final)
+        self.assertEqual(fast_final[0].get("segment_index"), 2)
+
+        release.set()
+        await pipeline.wait_for_pending_translations(timeout=1)
         await pipeline.stop()
 
 

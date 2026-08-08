@@ -20,10 +20,12 @@ from tools.endurance_runner import (
     build_memory_summary,
     build_report,
     build_session_url,
+    final_interarrival_ms_summary,
     frames_per_chunk,
     pcm_frames_to_float32_bytes,
     parse_args,
     parse_memory_monitor,
+    percentile,
     record_message,
     send_audio,
     validate_thresholds,
@@ -379,6 +381,33 @@ class FakeWebSocket:
 
     async def send(self, message: bytes | str) -> None:
         self.sent_messages.append(message)
+
+
+class PercentileTests(unittest.TestCase):
+    def test_percentile_empty_returns_none(self) -> None:
+        self.assertIsNone(percentile([], 0.5))
+
+    def test_percentile_median_of_odd_count(self) -> None:
+        self.assertEqual(percentile([3, 1, 2], 0.5), 2)
+
+    def test_percentile_interpolates_even_count(self) -> None:
+        self.assertEqual(percentile([1, 2, 3, 4], 0.5), 2.5)
+
+    def test_percentile_p95_is_high_end(self) -> None:
+        values = [float(index) for index in range(1, 101)]
+        self.assertAlmostEqual(percentile(values, 0.95), 95.05, places=2)
+
+    def test_interarrival_summary_requires_two_samples(self) -> None:
+        self.assertIsNone(final_interarrival_ms_summary([]))
+        self.assertIsNone(final_interarrival_ms_summary([100.0]))
+
+    def test_interarrival_summary_computes_intervals(self) -> None:
+        summary = final_interarrival_ms_summary([0.0, 1.0, 3.0])
+        self.assertIsNotNone(summary)
+        if summary is None:
+            raise AssertionError("Expected inter-arrival summary")
+        self.assertEqual(summary["count"], 2)
+        self.assertEqual(summary["p50_ms"], 1500.0)
 
 
 class EnduranceRunnerAsyncTests(unittest.IsolatedAsyncioTestCase):

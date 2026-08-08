@@ -72,7 +72,11 @@ Return only one line.
         if len(revisable) < 2:
             return revisions
 
-        context_text = context.to_context_text(max_sentences=settings.context_window_size)
+        context_text = context.to_context_text(
+            max_sentences=settings.context_window_size,
+            recent_sentences=settings.context_recent_sentences,
+            older_max_chars=settings.context_older_max_chars,
+        )
         should_force_due_to_ambiguity = force or self._has_semantic_ambiguity(trigger_segment)
 
         for segment in revisable:
@@ -161,13 +165,14 @@ Return only one line.
 
         segment.apply_revision(new_translation, "asr_correction")
         latency_ms = round((time.perf_counter() - started_at) * 1000)
-        logger.info(
-            "ASR correction triggered for {} via {} in {}ms: '{}' -> '{}'",
+        # 会议内容属敏感数据：只记录长度与耗时，不落盘原文/译文。
+        logger.debug(
+            "ASR correction for {} via {} in {}ms (len {} -> {})",
             segment.id,
             correction_source,
             latency_ms,
-            original_source[:50],
-            corrected[:50],
+            len(original_source),
+            len(corrected),
         )
         self._revision_count += 1
         return RevisionResult(
@@ -203,11 +208,12 @@ Return only one line.
         correction_source: str,
         trigger: str | None,
     ) -> RevisionResult:
-        logger.info(
-            "Translation revision triggered for {}: '{}' -> '{}'",
+        # 会议内容属敏感数据：只记录长度，不落盘译文。
+        logger.debug(
+            "Translation revision triggered for {} (len {} -> {})",
             segment.id,
-            segment.text_translated[:50],
-            new_text[:50],
+            len(segment.text_translated),
+            len(new_text),
         )
         old_translation = segment.text_translated
         segment.apply_revision(new_text, "translation_correction")
@@ -239,7 +245,12 @@ Return only one line.
             logger.warning("Revision translation failed for {}: {}", segment.id, exc)
             return ""
 
-        return new_translation.strip()
+        new_translation = new_translation.strip()
+        # 上游全部失败时 translate_stream 会降级为原文透传（"[未翻译] ..."），
+        # 这种结果不应作为"修正"覆盖已有译文，直接视为失败返回。
+        if new_translation.startswith("[未翻译]"):
+            return ""
+        return new_translation
 
     def _build_asr_prompt(self, segment: Segment, context: ContextWindow) -> str:
         segments = context.get_all()

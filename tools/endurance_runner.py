@@ -105,6 +105,8 @@ class RunnerState:
     unknown_revision_segment_ids: list[str] = field(default_factory=list)
     last_final_sequence: int | None = None
     memory_samples: list[dict[str, object]] = field(default_factory=list)
+    #: 翻译 final 消息到达时刻（单调时钟），用于计算到达间隔分位数
+    final_timestamps: list[float] = field(default_factory=list)
 
 
 class GeneratedAudioSource:
@@ -259,6 +261,7 @@ def record_message(state: RunnerState, message: dict[str, object]) -> None:
     if message_type == "translation_token" and message.get("is_final") is True:
         segment_id = message.get("segment_id")
         if isinstance(segment_id, str):
+            state.final_timestamps.append(now)
             record_final_translation_segment(state, segment_id)
 
     if message_type == "revision":
@@ -634,6 +637,7 @@ def build_report(
             "revision_counts": numeric_mapping(diagnostics.get("revision_counts")),
             "revision_sources": numeric_mapping(diagnostics.get("revision_sources")),
             "revision_triggers": numeric_mapping(diagnostics.get("revision_triggers")),
+            "final_interarrival_ms": final_interarrival_ms_summary(state.final_timestamps),
             "subtitle_ordering": build_subtitle_ordering_summary(state),
             "memory": build_memory_summary(state.memory_samples),
         },
@@ -664,6 +668,46 @@ def float_value(value: object) -> float:
     if isinstance(value, int | float):
         return float(value)
     return 0.0
+
+
+def percentile(values: list[float], probability: float) -> float | None:
+    """线性插值分位数。
+
+    Args:
+        values: 数值样本。
+        probability: 分位（0.0–1.0）。
+
+    Returns:
+        样本不足时返回 None，否则返回分位数值。
+    """
+    if not values:
+        return None
+    ordered = sorted(values)
+    position = (len(ordered) - 1) * probability
+    lower = math.floor(position)
+    upper = math.ceil(position)
+    if lower == upper:
+        return ordered[lower]
+    weight = position - lower
+    return round(ordered[lower] * (1 - weight) + ordered[upper] * weight, 3)
+
+
+def final_interarrival_ms_summary(final_timestamps: list[float]) -> dict[str, float] | None:
+    """翻译 final 消息到达间隔（毫秒）的 P50/P95 统计。
+
+    客户端可观测的稳定延迟代理：翻译吞吐越稳定，间隔分位越接近语音节奏。
+    """
+    if len(final_timestamps) < 2:
+        return None
+    intervals = [
+        round((later - earlier) * 1000, 3)
+        for earlier, later in zip(final_timestamps, final_timestamps[1:])
+    ]
+    return {
+        "count": len(intervals),
+        "p50_ms": percentile(intervals, 0.5),
+        "p95_ms": percentile(intervals, 0.95),
+    }
 
 
 def numeric_mapping(value: object) -> dict[str, int]:

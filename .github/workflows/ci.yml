@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.lock.txt
+
+      - name: 安装依赖（锁文件 + 开发依赖，可复现）
+        run: |
+          pip install -r backend/requirements.lock.txt
+          pip install -r backend/requirements-dev.txt
+
+      - name: 代码风格（ruff，仅拦截未定义名/未用导入等实质问题）
+        run: ruff check backend/ tools/
+
+      - name: 单元测试
+        run: pytest backend/ tools/ -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 安装依赖
+        working-directory: frontend
+        run: npm ci
+
+      - name: 类型检查
+        working-directory: frontend
+        run: npx tsc --noEmit
+
+      - name: 单元测试
+        working-directory: frontend
+        run: npm test

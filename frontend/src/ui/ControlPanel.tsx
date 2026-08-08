@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 
 import type { DesktopOverlayState } from '../desktop/overlay'
 import type { WebOverlayState } from '../desktop/web-overlay'
@@ -37,6 +37,7 @@ interface ControlPanelProps {
   onOpenSettings: () => void
   onManualRevise: () => void
   onOpenHistory: () => void
+  onGlossaryImport: (file: File) => Promise<boolean> | boolean
   onDesktopOverlayToggle: () => void
   onWebOverlayToggle: () => void
   onSubtitleModeChange: (mode: SubtitleMode) => void
@@ -124,6 +125,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   onOpenSettings,
   onManualRevise,
   onOpenHistory,
+  onGlossaryImport,
   onDesktopOverlayToggle,
   onWebOverlayToggle,
   onSubtitleModeChange,
@@ -133,6 +135,8 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   onTtsRateChange,
 }) => {
   const [showDetails, setShowDetails] = useState(false)
+  const [glossaryStatus, setGlossaryStatus] = useState<'idle' | 'ok' | 'failed'>('idle')
+  const glossaryInputRef = useRef<HTMLInputElement>(null)
   const text = uiText.control
   const isActive = status === 'capturing' || status === 'translating'
   const canUseTts = ttsDiagnostics.isSupported
@@ -300,6 +304,43 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             onClick={onOpenHistory}
           >
             {text.historyAndExport(subtitleHistoryCount)}
+          </button>
+        </div>
+
+        <div style={buttonClipStyle}>
+          <input
+            ref={glossaryInputRef}
+            type="file"
+            accept=".json,.csv"
+            style={{ display: 'none' }}
+            onChange={(event) => {
+              const file = event.target.files?.[0]
+              if (!file) {
+                return
+              }
+              const result = onGlossaryImport(file)
+              const resolved = result instanceof Promise ? result : Promise.resolve(result)
+              resolved
+                .then((success) => setGlossaryStatus(success ? 'ok' : 'failed'))
+                .catch(() => setGlossaryStatus('failed'))
+              event.target.value = ''
+              window.setTimeout(() => setGlossaryStatus('idle'), 2000)
+            }}
+          />
+          <button
+            type="button"
+            style={{
+              ...secondaryButtonStyle,
+              width: '100%',
+              color: glossaryStatus === 'failed' ? '#ff6b5e' : glossaryStatus === 'ok' ? '#58b06a' : '#d9e1eb',
+            }}
+            onClick={() => glossaryInputRef.current?.click()}
+          >
+            {glossaryStatus === 'failed'
+              ? text.glossaryImportFailed
+              : glossaryStatus === 'ok'
+                ? text.glossaryImported
+                : text.glossaryImport}
           </button>
         </div>
 

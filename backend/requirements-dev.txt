@@ -1,0 +1,4 @@
+# 开发/CI 专用依赖（运行时依赖见 requirements.lock.txt）
+# 注意：pytest 版本需与项目测试兼容；ruff 只启用 E4/E7/E9/F 规则。
+pytest==8.2.2
+ruff==0.5.5

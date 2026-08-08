@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import random
 from typing import AsyncIterator
 
 from loguru import logger
@@ -9,7 +11,40 @@ from loguru import logger
 from core.config import settings
 from core.exceptions import NMTError
 from models.segment import ContextWindow, Segment
+from services.glossary import GlossaryEntry, build_glossary_prompt
 from services.language_config import source_language_label, target_language_label
+
+
+#: 可重试的上游错误类型（限流与服务端错误）
+RETRYABLE_STATUS_CODES = frozenset({408, 429, 500, 502, 503, 504})
+MAX_RETRY_ATTEMPTS = 3
+BASE_BACKOFF_SECONDS = 0.4
+
+
+def _is_retryable(exc: Exception) -> bool:
+    """判断异常是否值得重试。
+
+    Args:
+        exc: 上游调用抛出的异常。
+
+    Returns:
+        限流/超时/5xx 返回 True；鉴权失败等永久错误返回 False。
+    """
+    status = getattr(exc, "status_code", None)
+    if isinstance(status, int):
+        return status in RETRYABLE_STATUS_CODES
+    if isinstance(exc, (asyncio.TimeoutError, ConnectionError)):
+        return True
+
+    # 连接错误/超时常被包装成 NMTError（status_code=None），
+    # 检查原始 cause（httpx/openai 异常）避免漏判最常见的网络抖动。
+    cause = exc.__cause__
+    if isinstance(cause, (asyncio.TimeoutError, ConnectionError)):
+        return True
+    cause_status = getattr(cause, "status_code", None)
+    if isinstance(cause_status, int):
+        return cause_status in RETRYABLE_STATUS_CODES
+    return False
 
 
 class NMTService:
@@ -30,6 +65,16 @@ class NMTService:
     def __init__(self) -> None:
         self._engine = settings.nmt_engine
         self._client = None
+        self._glossary: list[GlossaryEntry] = []
+
+    def set_glossary(self, entries: list[GlossaryEntry]) -> None:
+        """设置会话术语表（领域自适应）。
+
+        Args:
+            entries: 术语表条目列表。
+        """
+        self._glossary = list(entries)
+        logger.info("Glossary updated with {} entries", len(self._glossary))
 
     async def initialize(self) -> None:
         if self._engine == "claude":
@@ -68,13 +113,57 @@ class NMTService:
         context: ContextWindow,
         current: Segment,
     ) -> AsyncIterator[str]:
+        """带指数退避重试的翻译调用。
+
+        失败时不中断会话，而是降级为原文透传，保证字幕不断流 ——
+        同传场景下"降级的字幕"远好于"没有字幕"。
+        """
+        if self._engine not in {"claude", "openai"}:
+            raise NMTError(f"Unknown NMT engine: {self._engine}")
+
+        last_error: Exception | None = None
+        attempts = 0
+        for attempt in range(MAX_RETRY_ATTEMPTS):
+            attempts += 1
+            emitted_any = False
+            try:
+                stream = self._translate_stream_once(context, current)
+                async for token in stream:
+                    if token != "<FINAL>":
+                        emitted_any = True
+                    yield token
+                return
+            except Exception as exc:
+                last_error = exc
+                # 已向客户端吐出部分 token 时不再重试，避免字幕重复拼接。
+                if emitted_any or not _is_retryable(exc) or attempt == MAX_RETRY_ATTEMPTS - 1:
+                    break
+
+                delay = BASE_BACKOFF_SECONDS * (2 ** attempt)
+                jitter = random.uniform(0, delay * 0.3)
+                logger.warning(
+                    "Translation attempt {}/{} failed ({}), retrying in {:.2f}s",
+                    attempt + 1, MAX_RETRY_ATTEMPTS, exc, delay + jitter,
+                )
+                await asyncio.sleep(delay + jitter)
+
+        # 全部重试失败：降级为原文透传而非中断会话
+        logger.error("Translation failed after {} attempts: {}", attempts, last_error)
+        yield f"[未翻译] {current.text_asr}"
+        yield "<FINAL>"
+
+    async def _translate_stream_once(
+        self,
+        context: ContextWindow,
+        current: Segment,
+    ) -> AsyncIterator[str]:
+        """按所选引擎执行单次翻译流调用。"""
         if self._engine == "claude":
             async for token in self._translate_claude(context, current):
                 yield token
             return
-        if self._engine == "openai":
-            async for token in self._translate_openai(context, current):
-                yield token
+        async for token in self._translate_openai(context, current):
+            yield token
 
     async def complete_text(self, prompt: str, *, system_prompt: str) -> str:
         if self._engine == "claude":
@@ -105,7 +194,10 @@ class NMTService:
             yield "<FINAL>"
         except anthropic.APIError as exc:
             logger.error("Claude API error: {}", exc)
-            raise NMTError(f"Claude translation failed: {exc}")
+            raise NMTError(
+                f"Claude translation failed: {exc}",
+                status_code=getattr(exc, "status_code", None),
+            ) from exc
 
     async def _translate_openai(
         self,
@@ -140,7 +232,10 @@ class NMTService:
             yield "<FINAL>"
         except Exception as exc:
             logger.error("OpenAI API error: {}", exc)
-            raise NMTError(f"OpenAI translation failed: {exc}")
+            raise NMTError(
+                f"OpenAI translation failed: {exc}",
+                status_code=getattr(exc, "status_code", None),
+            ) from exc
 
     async def _complete_claude(self, prompt: str, system_prompt: str) -> str:
         try:
@@ -158,7 +253,10 @@ class NMTService:
             return "".join(parts).strip()
         except Exception as exc:
             logger.error("Claude completion error: {}", exc)
-            raise NMTError(f"Claude completion failed: {exc}")
+            raise NMTError(
+                f"Claude completion failed: {exc}",
+                status_code=getattr(exc, "status_code", None),
+            ) from exc
 
     async def _complete_openai(self, prompt: str, system_prompt: str) -> str:
         try:
@@ -175,7 +273,10 @@ class NMTService:
             return content.strip() if content else ""
         except Exception as exc:
             logger.error("OpenAI completion error: {}", exc)
-            raise NMTError(f"OpenAI completion failed: {exc}")
+            raise NMTError(
+                f"OpenAI completion failed: {exc}",
+                status_code=getattr(exc, "status_code", None),
+            ) from exc
 
     def _build_system_prompt(self, current: Segment) -> str:
         source_label = source_language_label(current.source_language)
@@ -185,9 +286,18 @@ class NMTService:
 {self.RULES_PROMPT}"""
 
     def _build_translation_prompt(self, context: ContextWindow, current: Segment) -> str:
-        context_text = context.to_context_text(max_sentences=settings.context_window_size)
+        context_text = context.to_context_text(
+            max_sentences=settings.context_window_size,
+            recent_sentences=settings.context_recent_sentences,
+            older_max_chars=settings.context_older_max_chars,
+        )
         source_label = source_language_label(current.source_language)
         target_label = target_language_label(current.target_language)
+
+        # 只注入本句命中的术语约束，避免 prompt 膨胀
+        glossary_prompt = build_glossary_prompt(self._glossary, current.text_asr)
+        glossary_block = f"\n{glossary_prompt}" if glossary_prompt else ""
+
         return f"""Previous context (for reference only, already translated):
 ---
 {context_text}
@@ -195,7 +305,7 @@ class NMTService:
 
 Translate this sentence from {source_label} to {target_label}:
 "{current.text_asr}"
-
+{glossary_block}
 Translation:"""
 
     async def shutdown(self) -> None:

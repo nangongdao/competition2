@@ -60,6 +60,9 @@ export interface ControlPanelText {
   showDetails: string
   hideDetails: string
   details: Record<string, string>
+  glossaryImport: string
+  glossaryImportFailed: string
+  glossaryImported: string
   captureBackends: {
     audioWorklet: string
     scriptProcessor: string
@@ -220,6 +223,9 @@ const UI_TEXT: Record<UiLanguage, UiText> = {
       stopTranslation: '停止翻译',
       reviseNow: '立即修正',
       historyAndExport: (count) => `历史与导出 (${count})`,
+      glossaryImport: '导入术语表',
+      glossaryImportFailed: '术语表解析失败（支持 JSON/CSV）',
+      glossaryImported: '术语表已应用',
       floatingSubtitlesOn: '悬浮字幕已开启',
       floatingSubtitlesOff: '悬浮字幕已关闭',
       openFloatingSubtitles: '打开悬浮字幕窗',
@@ -255,7 +261,7 @@ const UI_TEXT: Record<UiLanguage, UiText> = {
     history: {
       ariaLabel: '字幕历史',
       title: '字幕历史',
-      latestSummary: (visibleCount, totalCount) => `最近 ${visibleCount} 条 / 共 ${totalCount} 条`,
+      latestSummary: (_visibleCount, totalCount) => `共 ${totalCount} 条字幕`,
       close: '关闭',
       closeAriaLabel: '关闭字幕历史',
       source: '原文',
@@ -347,6 +353,9 @@ const UI_TEXT: Record<UiLanguage, UiText> = {
       stopTranslation: 'Stop translation',
       reviseNow: 'Revise now',
       historyAndExport: (count) => `History and export (${count})`,
+      glossaryImport: 'Import glossary',
+      glossaryImportFailed: 'Failed to parse glossary (JSON/CSV)',
+      glossaryImported: 'Glossary applied',
       floatingSubtitlesOn: 'Floating subtitles on',
       floatingSubtitlesOff: 'Floating subtitles off',
       openFloatingSubtitles: 'Open floating subtitles',
@@ -382,7 +391,7 @@ const UI_TEXT: Record<UiLanguage, UiText> = {
     history: {
       ariaLabel: 'Subtitle history',
       title: 'Subtitle history',
-      latestSummary: (visibleCount, totalCount) => `Latest ${visibleCount} of ${totalCount} entries`,
+      latestSummary: (_visibleCount, totalCount) => `${totalCount} subtitles`,
       close: 'Close',
       closeAriaLabel: 'Close subtitle history',
       source: 'Source',

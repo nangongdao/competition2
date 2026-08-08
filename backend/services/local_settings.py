@@ -9,7 +9,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 import json
+import os
 from pathlib import Path
+import stat
 
 from loguru import logger
 
@@ -229,12 +231,28 @@ def write_local_settings(
     settings: LocalSettings,
     path: Path = LOCAL_SETTINGS_PATH,
 ) -> None:
+    """原子写入本地设置。
+
+    文件含 API key，必须以 0600 权限创建 —— 先建立权限再写入内容，
+    避免出现"短暂可读"的时间窗口。
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     temp_path = path.with_name(f"{path.name}.tmp")
-    temp_path.write_text(
-        f"{json.dumps(create_settings_file_payload(settings), ensure_ascii=False, indent=2)}\n",
-        encoding="utf-8",
+    payload = f"{json.dumps(create_settings_file_payload(settings), ensure_ascii=False, indent=2)}\n"
+
+    # 以 0600 创建临时文件，写入后再原子替换
+    fd = os.open(
+        temp_path,
+        os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+        stat.S_IRUSR | stat.S_IWUSR,
     )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(payload)
+    except Exception:
+        temp_path.unlink(missing_ok=True)
+        raise
+
     temp_path.replace(path)
 
 

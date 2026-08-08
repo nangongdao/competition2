@@ -66,6 +66,32 @@ class DesktopLauncherTests(unittest.TestCase):
         self.assertNotIn("WHISPER_DEVICE", env)
         self.assertNotIn("WHISPER_COMPUTE_TYPE", env)
 
+    def test_build_backend_environment_injects_allowed_origins(self) -> None:
+        with (
+            patch.dict(desktop_launcher.os.environ, {}, clear=True),
+            patch.object(desktop_launcher, "write_log"),
+        ):
+            env = desktop_launcher.build_backend_environment(
+                8123,
+                "light",
+                allowed_origins=("http://127.0.0.1:5173", "http://127.0.0.1:48231"),
+            )
+
+        self.assertEqual(
+            env["ALLOWED_ORIGINS"],
+            "http://127.0.0.1:5173,http://127.0.0.1:48231",
+        )
+
+    def test_frontend_origin_from_url_keeps_random_port(self) -> None:
+        origin = desktop_launcher.frontend_origin_from_url("http://127.0.0.1:48231/?wsUrl=...")
+
+        self.assertEqual(origin, "http://127.0.0.1:48231")
+
+    def test_frontend_origin_from_url_without_explicit_port(self) -> None:
+        origin = desktop_launcher.frontend_origin_from_url("http://localhost/app")
+
+        self.assertEqual(origin, "http://localhost")
+
     def test_build_backend_environment_preserves_explicit_process_env(self) -> None:
         with (
             patch.dict(

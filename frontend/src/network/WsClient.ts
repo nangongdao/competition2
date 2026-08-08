@@ -30,6 +30,7 @@ export class WsClient {
   private _intentionalClose = false
   private _diagnostics: ClientDiagnostics
   private _languageConfig: LanguageConfig | null = null
+  private _reconnectToken: string | null = null
 
   constructor(baseUrl: string) {
     this._baseUrl = baseUrl
@@ -71,7 +72,7 @@ export class WsClient {
     this._setState('connecting')
 
     try {
-      this._ws = new WebSocket(this._url)
+      this._ws = new WebSocket(this._connectUrl())
       this._ws.binaryType = 'arraybuffer'
 
       this._ws.onopen = () => {
@@ -140,6 +141,7 @@ export class WsClient {
     this.disconnect()
     const sessionId = createSessionId()
     this._url = appendSessionId(this._baseUrl, sessionId)
+    this._reconnectToken = null
     this._retryCount = 0
     this._diagnostics = {
       sessionId,
@@ -157,11 +159,25 @@ export class WsClient {
     try {
       if (typeof event.data === 'string') {
         const message = JSON.parse(event.data) as ServerMessage
+        this._captureReconnectToken(message)
         this._callbacks?.onMessage(message)
       }
     } catch (err) {
       console.error('[WsClient] Failed to parse message:', err)
     }
+  }
+
+  private _captureReconnectToken(message: ServerMessage): void {
+    if (message.type === 'status' && typeof message.reconnect_token === 'string') {
+      this._reconnectToken = message.reconnect_token
+    }
+  }
+
+  private _connectUrl(): string {
+    if (!this._reconnectToken) {
+      return this._url
+    }
+    return appendReconnectToken(this._url, this._reconnectToken)
   }
 
   private _tryReconnect(): void {
@@ -217,15 +233,28 @@ export class WsClient {
 
 
 function createSessionId(): string {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-    return crypto.randomUUID().slice(0, 8)
+  // 使用完整 UUID（122 bit 熵）而非截断 8 字符，避免会话 ID 可被枚举。
+  // 截断后的短 ID 会让攻击者暴力枚举出活跃会话并触发接管尝试。
+  const webCrypto = (globalThis as typeof globalThis & { crypto?: Crypto }).crypto
+  if (webCrypto && typeof webCrypto.randomUUID === 'function') {
+    return webCrypto.randomUUID()
   }
-
-  return Math.random().toString(36).slice(2, 10)
+  if (webCrypto && typeof webCrypto.getRandomValues === 'function') {
+    const bytes = new Uint8Array(16)
+    webCrypto.getRandomValues(bytes)
+    return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+  }
+  throw new Error('Web Crypto API unavailable for session id generation')
 }
 
 
 function appendSessionId(baseUrl: string, sessionId: string): string {
   const normalized = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl
   return `${normalized}/${encodeURIComponent(sessionId)}`
+}
+
+
+function appendReconnectToken(sessionUrl: string, token: string): string {
+  const separator = sessionUrl.includes('?') ? '&' : '?'
+  return `${sessionUrl}${separator}token=${encodeURIComponent(token)}`
 }

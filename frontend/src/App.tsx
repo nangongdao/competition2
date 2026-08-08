@@ -232,6 +232,7 @@ const App: React.FC = () => {
         onOpenSettings={() => setIsSettingsOpen(true)}
         onManualRevise={() => controller.requestManualRevision()}
         onOpenHistory={() => setIsHistoryOpen(true)}
+        onGlossaryImport={(file) => controller.uploadGlossary(file)}
         onDesktopOverlayToggle={handleDesktopOverlayToggle}
         onWebOverlayToggle={handleWebOverlayToggle}
         onSubtitleModeChange={(mode) => controller.setSubtitleMode(mode)}

@@ -39,6 +39,33 @@ const TRANSLATION_ENGINES = new Set(['openai', 'claude'])
 const ASR_PROFILES = new Set(['remote', 'light', 'cpu', 'gpu', 'env'])
 const SOURCE_LANGUAGES = new Set(['auto', 'en', 'ja', 'ko', 'es', 'fr', 'de'])
 
+/** 只允许通过系统浏览器打开的协议。 */
+const SAFE_EXTERNAL_PROTOCOLS = new Set(['https:', 'http:'])
+
+/**
+ * 安全地用系统默认程序打开外部链接。
+ *
+ * shell.openExternal 会交给 OS 按协议分发，file:// 与 smb:// 等
+ * 可造成本地文件访问或 NTLM 哈希泄露，必须限制协议。
+ *
+ * @param {string} targetUrl 待打开的 URL
+ */
+function openExternalSafely(targetUrl) {
+  let parsed
+  try {
+    parsed = new URL(targetUrl)
+  } catch {
+    return
+  }
+
+  if (!SAFE_EXTERNAL_PROTOCOLS.has(parsed.protocol)) {
+    console.warn('拒绝打开非 http(s) 链接:', parsed.protocol)
+    return
+  }
+
+  void shell.openExternal(targetUrl)
+}
+
 let mainWindow = null
 let overlayWindow = null
 let tray = null
@@ -82,14 +109,14 @@ function createMainWindow(url) {
   window.setMenuBarVisibility(false)
 
   window.webContents.setWindowOpenHandler(({ url: targetUrl }) => {
-    shell.openExternal(targetUrl)
+    openExternalSafely(targetUrl)
     return { action: 'deny' }
   })
 
   window.webContents.on('will-navigate', (event, targetUrl) => {
     if (targetUrl !== url && !targetUrl.startsWith(url)) {
       event.preventDefault()
-      shell.openExternal(targetUrl)
+      openExternalSafely(targetUrl)
     }
   })
 
@@ -295,7 +322,11 @@ function readSettingsFile() {
 function writeSettingsFile(settings) {
   fs.mkdirSync(settingsDir, { recursive: true })
   const tempPath = `${settingsPath}.tmp`
-  fs.writeFileSync(tempPath, `${JSON.stringify(settings, null, 2)}\n`, 'utf8')
+  // mode 0o600：文件含 API key，避免同机其他用户可读（POSIX；Windows 由 ACL 决定）。
+  fs.writeFileSync(tempPath, `${JSON.stringify(settings, null, 2)}\n`, {
+    encoding: 'utf8',
+    mode: 0o600,
+  })
   fs.renameSync(tempPath, settingsPath)
 }
 
