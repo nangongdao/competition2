@@ -76,6 +76,37 @@ class SettingsConfigTests(unittest.TestCase):
         self.assertEqual(settings.whisper_device, "cpu")
         self.assertEqual(settings.whisper_compute_type, "int8")
 
+    def test_default_host_is_loopback_only(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            settings = Settings(_env_file=())
+
+        self.assertEqual(settings.host, "127.0.0.1")
+
+    def test_default_cors_origins_are_local_frontends(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            settings = Settings(_env_file=())
+
+        self.assertIn("http://127.0.0.1:5173", settings.allowed_origin_list)
+        self.assertNotIn("*", settings.allowed_origin_list)
+
+    def test_allowed_origins_parses_comma_separated_list(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"ALLOWED_ORIGINS": "http://a.local, ,http://b.local"},
+            clear=True,
+        ):
+            settings = Settings(_env_file=())
+
+        self.assertEqual(settings.allowed_origin_list, ["http://a.local", "http://b.local"])
+
+    def test_audio_frame_limits_have_sane_defaults(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            settings = Settings(_env_file=())
+
+        self.assertEqual(settings.audio_max_chunk_bytes, 64 * 1024)
+        self.assertEqual(settings.audio_max_chunks_per_second, 20)
+        self.assertEqual(settings.redis_key_prefix, "ai-interpreter")
+
 
 if __name__ == "__main__":
     unittest.main()

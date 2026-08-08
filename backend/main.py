@@ -51,10 +51,10 @@ app = FastAPI(
 # CORS 中间件
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.allowed_origin_list,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 # 请求日志中间件
@@ -72,6 +72,11 @@ def main():
         port=settings.port,
         reload=settings.debug,
         log_level="info",
+        # 本地服务不在反向代理后，禁用 X-Forwarded-* 覆写，
+        # 防止 loopback 校验被伪造头绕过。
+        proxy_headers=False,
+        # WebSocket 单帧上限 64KB，与后端音频帧校验保持一致。
+        ws_max_size=64 * 1024,
     )
 
 

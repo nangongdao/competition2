@@ -1,4 +1,5 @@
 import type { SubtitleEntry, SubtitleMode } from '../types'
+import { speakerColor } from './speaker'
 
 
 export interface SubtitleRendererConfig {
@@ -96,6 +97,9 @@ export class SubtitleRenderer {
     wrapper.className = 'subtitle-entry'
     wrapper.dataset.segmentId = entry.segmentId
 
+    const speaker = document.createElement('div')
+    speaker.className = 'subtitle-speaker'
+
     const source = document.createElement('div')
     source.className = 'subtitle-source'
 
@@ -106,20 +110,23 @@ export class SubtitleRenderer {
     cursor.className = 'subtitle-cursor'
     cursor.textContent = '|'
 
+    wrapper.appendChild(speaker)
     wrapper.appendChild(source)
     wrapper.appendChild(translated)
     wrapper.appendChild(cursor)
 
-    this._applyEntryState(wrapper, source, translated, cursor, entry)
+    this._applyEntryState(wrapper, speaker, source, translated, cursor, entry)
     return wrapper
   }
 
   private _updateText(element: HTMLDivElement, entry: SubtitleEntry): void {
+    const speaker = element.querySelector('.subtitle-speaker')
     const source = element.querySelector('.subtitle-source')
     const translated = element.querySelector('.subtitle-translated')
     const cursor = element.querySelector('.subtitle-cursor')
 
     if (
+      !(speaker instanceof HTMLDivElement) ||
       !(source instanceof HTMLDivElement) ||
       !(translated instanceof HTMLDivElement) ||
       !(cursor instanceof HTMLSpanElement)
@@ -127,16 +134,21 @@ export class SubtitleRenderer {
       return
     }
 
-    this._applyEntryState(element, source, translated, cursor, entry)
+    this._applyEntryState(element, speaker, source, translated, cursor, entry)
   }
 
   private _applyEntryState(
     wrapper: HTMLDivElement,
+    speaker: HTMLDivElement,
     source: HTMLDivElement,
     translated: HTMLDivElement,
     cursor: HTMLSpanElement,
     entry: SubtitleEntry,
   ): void {
+    speaker.textContent = entry.speaker ?? ''
+    speaker.style.display = entry.speaker ? 'block' : 'none'
+    speaker.style.color = entry.speaker ? speakerColor(entry.speaker) : ''
+
     source.textContent = entry.sourceText
     translated.textContent = entry.translatedText
 
@@ -203,6 +215,15 @@ export class SubtitleRenderer {
         font-size: 15px;
         line-height: 1.4;
         word-break: break-word;
+      }
+
+      .subtitle-speaker {
+        align-self: center;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.4px;
+        text-transform: uppercase;
+        opacity: 0.92;
       }
 
       .subtitle-translated {

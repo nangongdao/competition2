@@ -43,6 +43,21 @@ BACKEND_HEALTH_PATH = "/api/v1/health"
 BACKEND_WS_PATH = "/api/v1/ws/translate"
 BACKEND_START_TIMEOUT_SECONDS = 180
 DEFAULT_DESKTOP_ASR_PROFILE = "remote"
+
+#: 后端 CORS / WS Origin 白名单默认值（含 Vite dev server 与 launcher 注入的前端源）
+DEFAULT_ALLOWED_ORIGINS = ("http://127.0.0.1:5173", "http://localhost:5173")
+
+
+def frontend_origin_from_url(frontend_url: str) -> str:
+    """从 launcher 的前端 URL 提取 origin（scheme://host[:port]）。
+
+    launcher 使用随机端口提供前端，浏览器/Electron 的 WS 握手 Origin 会是
+    该实际地址，必须注入后端 ALLOWED_ORIGINS，否则核心翻译流被 Origin 校验拒绝。
+    """
+    parsed = urlsplit(frontend_url)
+    if parsed.port:
+        return f"{parsed.scheme}://{parsed.hostname}:{parsed.port}"
+    return f"{parsed.scheme}://{parsed.hostname}"
 DESKTOP_ASR_PROFILE_ENV = "AI_INTERPRETER_DESKTOP_ASR_PROFILE"
 WS_URL_QUERY_PARAM = "wsUrl"
 LAUNCH_MODES = {"desktop", "web"}
@@ -318,12 +333,15 @@ def build_backend_environment(
     port: int,
     asr_profile: str,
     desktop_settings: DesktopSettings | None = None,
+    allowed_origins: tuple[str, ...] | None = None,
 ) -> dict[str, str]:
     resolved_settings = desktop_settings or DesktopSettings()
     env = os.environ.copy()
     env["PORT"] = str(port)
     apply_desktop_settings_to_env(env, resolved_settings)
     apply_desktop_asr_profile(env, asr_profile, resolved_settings)
+    if allowed_origins:
+        env["ALLOWED_ORIGINS"] = ",".join(allowed_origins)
     return env
 
 
@@ -549,6 +567,7 @@ def start_backend(
     port: int,
     asr_profile: str,
     desktop_settings: DesktopSettings | None = None,
+    allowed_origins: tuple[str, ...] | None = None,
 ) -> subprocess.Popen[str] | None:
     if is_backend_healthy(port):
         write_log(f"Backend already healthy on {HOST}:{port}")
@@ -565,7 +584,7 @@ def start_backend(
         "--port",
         str(port),
     ]
-    env = build_backend_environment(port, asr_profile, desktop_settings)
+    env = build_backend_environment(port, asr_profile, desktop_settings, allowed_origins)
 
     write_log(f"Starting backend: {' '.join(command)}")
     process = subprocess.Popen(
@@ -784,7 +803,17 @@ def main() -> int:
 
         splash.set_status("Starting backend")
         backend_port = resolve_backend_port(args.backend_port)
-        backend_process = start_backend(backend_port, asr_profile, desktop_settings)
+        # launcher 用随机端口提供前端，必须把实际前端 origin 注入白名单，
+        # 否则浏览器/Electron 的 WS Origin 校验会拒绝核心翻译流。
+        allowed_origins = DEFAULT_ALLOWED_ORIGINS + (
+            frontend_origin_from_url(frontend_url),
+        )
+        backend_process = start_backend(
+            backend_port,
+            asr_profile,
+            desktop_settings,
+            allowed_origins=allowed_origins,
+        )
 
         backend_ws_url = create_backend_ws_url(backend_port)
         splash.set_status("Opening app")

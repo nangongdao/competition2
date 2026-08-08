@@ -4,7 +4,7 @@
 """
 
 import redis.asyncio as aioredis
-from typing import Optional, Any
+from typing import Optional
 from loguru import logger
 
 from core.config import settings

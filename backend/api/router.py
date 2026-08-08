@@ -1,12 +1,14 @@
 """FastAPI 路由定义"""
 
-import uuid
+import secrets
+from urllib.parse import urlparse
 
-from fastapi import APIRouter, HTTPException, Request, WebSocket
+from fastapi import APIRouter, HTTPException, Request, WebSocket, status
 from loguru import logger
 from pydantic import BaseModel, ConfigDict
 
 from api.websocket_handler import WebSocketHandler
+from core.config import settings
 from services.local_settings import (
     create_settings_snapshot,
     read_local_settings,
@@ -77,6 +79,35 @@ def set_ws_handler(handler: WebSocketHandler) -> None:
     _ws_handler = handler
 
 
+def _is_allowed_ws_origin(origin: str | None) -> bool:
+    """校验 WebSocket 握手的 Origin 头。
+
+    WebSocket 不受同源策略保护，必须服务端主动校验，
+    否则任意网站都可连接本地服务（CSWSH）。
+
+    Args:
+        origin: 握手请求中的 Origin 头，可能为 None（非浏览器客户端）。
+
+    Returns:
+        是否允许该来源建立连接。
+    """
+    # 非浏览器客户端（如测试工具）不带 Origin，桌面场景可放行。
+    if origin is None:
+        return True
+
+    if origin in settings.allowed_origin_list:
+        return True
+
+    # 额外放行 Electron 的 file:// 来源
+    parsed = urlparse(origin)
+    return parsed.scheme == "file"
+
+
+async def _reject_unauthorized_ws(ws: WebSocket) -> None:
+    """拒绝未授权的 WebSocket 握手。"""
+    await ws.close(code=status.WS_1008_POLICY_VIOLATION)
+
+
 @router.get("/health")
 async def health_check():
     """健康检查端点"""
@@ -122,6 +153,11 @@ async def websocket_translate(ws: WebSocket):
     客户端通过此端点建立 WebSocket 连接，
     发送音频数据并接收翻译结果。
     """
+    if not _is_allowed_ws_origin(ws.headers.get("origin")):
+        logger.warning("Rejected websocket from origin {}", ws.headers.get("origin"))
+        await _reject_unauthorized_ws(ws)
+        return
+
     handler = get_ws_handler()
     if not handler:
         await ws.accept()
@@ -133,14 +169,23 @@ async def websocket_translate(ws: WebSocket):
         await ws.close()
         return
 
-    # 生成会话 ID
-    session_id = str(uuid.uuid4())[:8]
+    # 使用密码学安全的随机串生成会话 ID（192 bit 熵，不可枚举）
+    session_id = secrets.token_urlsafe(24)
     await handler.handle_connection(ws, session_id)
 
 
 @router.websocket("/ws/translate/{session_id}")
 async def websocket_translate_with_session(ws: WebSocket, session_id: str):
-    """WebSocket 翻译端点（带指定会话 ID，用于重连）"""
+    """WebSocket 翻译端点（带指定会话 ID，用于重连）
+
+    重连必须提供首次连接时下发的 reconnect_token，
+    否则任何人猜到 session_id 就能接管会话。
+    """
+    if not _is_allowed_ws_origin(ws.headers.get("origin")):
+        logger.warning("Rejected websocket from origin {}", ws.headers.get("origin"))
+        await _reject_unauthorized_ws(ws)
+        return
+
     handler = get_ws_handler()
     if not handler:
         await ws.accept()
@@ -151,5 +196,13 @@ async def websocket_translate_with_session(ws: WebSocket, session_id: str):
         })
         await ws.close()
         return
+
+    # 会话已存在时，重连必须携带有效令牌；首次连接（无活跃管线）放行。
+    if handler.has_active_pipeline(session_id):
+        token = ws.query_params.get("token", "")
+        if not handler.verify_reconnect_token(session_id, token):
+            logger.warning("Rejected reconnect with invalid token for session {}", session_id)
+            await _reject_unauthorized_ws(ws)
+            return
 
     await handler.handle_connection(ws, session_id)

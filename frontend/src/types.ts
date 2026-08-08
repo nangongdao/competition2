@@ -17,16 +17,22 @@ export interface AsrPartialMessage {
 export interface AsrFinalMessage {
   type: 'asr_final'
   segment_id: string
+  /** 单调递增的片段序号，用于前端按序落位（翻译异步化后可能乱序到达）。 */
+  segment_index?: number
   text: string
   confidence: number
   latency_ms?: number
   source_language?: string
   target_language?: string
+  /** 说话人标识（启用说话人分离时下发，如 "speaker_1"）。 */
+  speaker_id?: string
 }
 
 export interface TranslationTokenMessage {
   type: 'translation_token'
   segment_id: string
+  /** 单调递增的片段序号，用于前端按序落位。 */
+  segment_index?: number
   token: string
   is_final: boolean
 }
@@ -85,6 +91,8 @@ export interface StatusMessage {
   code: string
   message: string
   session_id?: string
+  /** 会话重连令牌，客户端重连时通过 ?token= 查询参数回传。 */
+  reconnect_token?: string
 }
 
 export interface ErrorMessage {
@@ -203,6 +211,10 @@ export interface SubtitleEntry {
   revisionReason?: RevisionReason
   revisedAt?: number
   timestamp: number
+  /** 单调递增的片段序号，用于乱序结果按序落位。 */
+  seq?: number
+  /** 说话人标识（说话人分离开启时存在），用于字幕着色。 */
+  speaker?: string
 }
 
 export type AppStatus = 'idle' | 'capturing' | 'translating' | 'error'

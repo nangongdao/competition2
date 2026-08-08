@@ -1,0 +1,34 @@
+{
+  "blockers": [
+    "ANTHROPIC_API_KEY is missing or still uses a placeholder value.",
+    "ASR_ENGINE must be whisper for the real endurance baseline."
+  ],
+  "checks": {
+    "provider": {
+      "engine": "claude",
+      "key_present": false,
+      "model": "claude-sonnet-4-20250514",
+      "required_key": "ANTHROPIC_API_KEY",
+      "supported": true
+    },
+    "redis": {
+      "ok": true,
+      "protocol": 2,
+      "url": "redis://localhost:6379/0",
+      "version": "3.0.504"
+    },
+    "whisper": {
+      "compute_type": "int8",
+      "cuda_available": true,
+      "device": "cpu",
+      "engine": "openai",
+      "model": "small",
+      "model_load_checked": false,
+      "package_present": true,
+      "package_version": "1.2.1"
+    }
+  },
+  "generated_at": "2026-08-02T07:59:49Z",
+  "next_command_when_ready": "python tools/endurance_runner.py --duration-seconds 1800 --source silence --output reports/endurance-30m.json --max-dropped-chunks 0 --max-queue-depth 8 --min-received-ratio 0.99",
+  "status": "blocked"
+}

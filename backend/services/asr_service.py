@@ -13,6 +13,11 @@ from loguru import logger
 
 from core.config import settings
 from core.exceptions import ASRError
+from services.adaptive_segmenter import (
+    AdaptiveSegmenter,
+    SileroVoiceActivityDetector,
+    create_silero_vad,
+)
 from services.language_config import normalize_source_language, whisper_language_code
 
 
@@ -39,6 +44,8 @@ class ASRService:
         self._latest_input_audio_chunk = b""
         self._last_segment_audio_chunk = b""
         self._source_language = normalize_source_language(settings.source_language)
+        self._vad: Optional[SileroVoiceActivityDetector] = None
+        self._segmenter: Optional[AdaptiveSegmenter] = None
 
     def set_on_partial(self, callback: PartialCallback) -> None:
         self._on_partial = callback
@@ -50,6 +57,11 @@ class ASRService:
         self._source_language = normalize_source_language(source_language)
 
     async def initialize(self) -> None:
+        # 惰性加载 VAD：失败则降级为纯时长切分，不影响主链路
+        if settings.adaptive_segmenter_enabled:
+            self._vad = create_silero_vad(sample_rate=self._sample_rate)
+        self._segmenter = self._build_segmenter()
+
         if self._engine == "whisper":
             await self._init_whisper()
             return
@@ -63,6 +75,18 @@ class ASRService:
             logger.info("Azure ASR engine selected (not implemented)")
             return
         raise ASRError(f"Unknown ASR engine: {self._engine}")
+
+    def _build_segmenter(self) -> Optional[AdaptiveSegmenter]:
+        """按配置构造分段器；禁用或构造失败时返回 None（退回固定窗口）。"""
+        if not settings.adaptive_segmenter_enabled:
+            return None
+        return AdaptiveSegmenter(
+            sample_rate=self._sample_rate,
+            min_segment_ms=settings.segment_min_ms,
+            max_segment_ms=settings.segment_max_ms,
+            silence_boundary_ms=settings.segment_silence_boundary_ms,
+            vad=self._vad,
+        )
 
     async def _init_whisper(self) -> None:
         try:
@@ -108,8 +132,14 @@ class ASRService:
     async def _process_openai(self, audio_bytes: bytes) -> int:
         audio_array = np.frombuffer(audio_bytes, dtype=np.float32)
         self._latest_input_audio_chunk = audio_bytes
-        self._audio_buffer.append(audio_array)
 
+        if self._segmenter is not None:
+            if self._segmenter.should_emit(audio_array):
+                return await self._trigger_openai_decode()
+            return 0
+
+        # 回退路径：固定 2 秒窗口（segmenter 不可用时）
+        self._audio_buffer.append(audio_array)
         total_samples = sum(len(chunk) for chunk in self._audio_buffer)
         min_samples = self._sample_rate * 2
         if total_samples >= min_samples:
@@ -117,12 +147,12 @@ class ASRService:
         return 0
 
     async def _trigger_openai_decode(self) -> int:
-        if not self._client or not self._audio_buffer:
+        if not self._client:
             return 0
 
-        audio_buffer_snapshot = self._audio_buffer
-        self._audio_buffer = []
-        audio = np.concatenate(audio_buffer_snapshot)
+        audio = self._take_audio_buffer()
+        if audio.size == 0:
+            return 0
         self._last_segment_audio_chunk = audio.astype(np.float32, copy=False).tobytes()
 
         try:
@@ -133,14 +163,20 @@ class ASRService:
             return 0
         except Exception as exc:
             logger.error("OpenAI-compatible ASR decode error: {}", exc)
-            self._audio_buffer = audio_buffer_snapshot + self._audio_buffer
+            self._restore_audio_buffer(audio)
             return 0
 
     async def _process_whisper(self, audio_bytes: bytes) -> int:
         audio_array = np.frombuffer(audio_bytes, dtype=np.float32)
         self._latest_input_audio_chunk = audio_bytes
-        self._audio_buffer.append(audio_array)
 
+        if self._segmenter is not None:
+            if self._segmenter.should_emit(audio_array):
+                return await self._trigger_whisper_decode()
+            return 0
+
+        # 回退路径：固定 2 秒窗口（segmenter 不可用时）
+        self._audio_buffer.append(audio_array)
         total_samples = sum(len(chunk) for chunk in self._audio_buffer)
         min_samples = self._sample_rate * 2
         if total_samples >= min_samples:
@@ -148,12 +184,12 @@ class ASRService:
         return 0
 
     async def _trigger_whisper_decode(self) -> int:
-        if not self._model or not self._audio_buffer:
+        if not self._model:
             return 0
 
-        audio_buffer_snapshot = self._audio_buffer
-        self._audio_buffer = []
-        audio = np.concatenate(audio_buffer_snapshot)
+        audio = self._take_audio_buffer()
+        if audio.size == 0:
+            return 0
         self._last_segment_audio_chunk = audio.astype(np.float32, copy=False).tobytes()
 
         try:
@@ -167,8 +203,25 @@ class ASRService:
             return emitted
         except Exception as exc:
             logger.error("Whisper decode error: {}", exc)
-            self._audio_buffer = audio_buffer_snapshot + self._audio_buffer
+            self._restore_audio_buffer(audio)
             return 0
+
+    def _take_audio_buffer(self) -> np.ndarray:
+        """从分段器或回退缓冲取出累积音频。"""
+        if self._segmenter is not None:
+            return self._segmenter.take_buffer()
+        if not self._audio_buffer:
+            return np.empty(0, dtype=np.float32)
+        audio = np.concatenate(self._audio_buffer)
+        self._audio_buffer = []
+        return audio
+
+    def _restore_audio_buffer(self, audio: np.ndarray) -> None:
+        """解码失败时把音频放回缓冲头部，避免丢数据。"""
+        if self._segmenter is not None:
+            self._segmenter.prepend(audio)
+        else:
+            self._audio_buffer.insert(0, audio)
 
     async def redecode_audio(self, audio_bytes: bytes) -> ASRDecodeResult | None:
         """Re-run the active ASR backend on cached segment audio for correction."""
@@ -254,6 +307,8 @@ class ASRService:
         service._model = self._model
         service._client = self._client
         service._source_language = self._source_language
+        service._vad = self._vad
+        service._segmenter = service._build_segmenter()
         return service
 
     def reset_session_state(self) -> None:
@@ -262,6 +317,8 @@ class ASRService:
         self._audio_buffer.clear()
         self._latest_input_audio_chunk = b""
         self._last_segment_audio_chunk = b""
+        if self._segmenter is not None:
+            self._segmenter.reset()
 
     async def shutdown(self) -> None:
         if self._model:
@@ -271,6 +328,9 @@ class ASRService:
         self._audio_buffer.clear()
         self._latest_input_audio_chunk = b""
         self._last_segment_audio_chunk = b""
+        if self._segmenter is not None:
+            self._segmenter.reset()
+        self._vad = None
         logger.info("ASR service shut down")
 
 

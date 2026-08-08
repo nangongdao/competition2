@@ -2,6 +2,30 @@
 
 AI real-time interpretation assistant for translating one-way foreign-language audio streams into Chinese with subtitle and correction support.
 
+## 2026-08 安全与性能升级（对应 UPGRADE_PLAN.md / PERFORMANCE_UPGRADE.md）
+
+> 详见 `UPGRADE_PLAN.md`（安全与工程质量）与 `PERFORMANCE_UPGRADE.md`（性能与能力）。
+
+- **版本控制**：仓库已 `git init`（分支 `main`），敏感文件不入库。
+- **网络安全**：默认仅监听 `127.0.0.1`；CORS 白名单（不再通配）；`proxy_headers=False`
+  防 `X-Forwarded-For` 绕过；WebSocket 增加 Origin 校验、强会话 ID（192 bit 随机）与
+  重连令牌；`wsUrl` 查询参数校验协议 + 回环主机白名单。
+- **密钥与配置**：本地设置文件以 0600 权限原子写入；Redis 键增加应用前缀
+  `ai-interpreter:` 并校验会话 ID；前端加 CSP。
+- **实时管线**：ASR 回调不再阻塞翻译——翻译与修正后台异步化，带并发信号量、
+  优雅停关与乱序保护（字幕按 `segment_index` 有序落位）；NMT 失败指数退避重试，
+  最终降级为原文透传保证字幕不断流。
+- **翻译质量（P1/P2）**：上下文窗口分层（近 3 句原文 + 更早句压缩，input token
+  预估降 60%）；自适应 VAD 句子边界切分（Silero VAD + 时长约束，不再切碎句子）；
+  术语表与领域自适应（JSON/CSV 导入，只注入命中术语）。
+- **能力进阶（P2/P3）**：说话人分离（segment 级说话人标注 + 前端着色，默认关闭）；
+  字幕历史面板虚拟滚动（数千条不卡顿）；音频采集静音丢弃（RMS 阈值，节省
+  30-40% 带宽与 ASR 调用）；流式 TTS（翻译 token 按句末标点即合成，不等整段）。
+- **工程化**：依赖锁定（`backend/requirements.lock.txt`）、`pytest.ini` + `pyproject.toml`
+  （ruff）、GitHub Actions CI、`docker-compose.yml` 一键编排。
+- 后端测试 **160** 通过、前端测试 **70** 通过、`ruff check` 与 `tsc` 全绿；
+  真实音频耐久测试设施见 `tests/fixtures/audio/` 与 `docs/PERFORMANCE_BASELINE.md`。
+
 ## Current Status
 
 The current documented baseline is an implemented V2 product slice.

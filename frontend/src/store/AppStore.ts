@@ -1,4 +1,5 @@
 import { AudioCapture } from '../audio/AudioCapture'
+import { splitSentences } from '../audio/sentence'
 import { TtsPlayer } from '../audio/TtsPlayer'
 import { WsClient } from '../network/WsClient'
 import {
@@ -89,6 +90,10 @@ export class AppController {
   private _subtitleStore: SubtitleStore
   private _subtitleRenderer: SubtitleRenderer | null = null
   private _listeners: Set<StateListener> = new Set()
+  //: 流式 TTS 的逐段未完成句子缓冲（key: segmentId）
+  private _ttsSentenceBuffers: Map<string, string> = new Map()
+  //: 已提交给 TTS 的句子计数（key: segmentId），用于句子序号去重
+  private _ttsSentenceCounters: Map<string, number> = new Map()
   private _state: AppState = {
     status: 'idle',
     connectionState: 'disconnected',
@@ -227,6 +232,23 @@ export class AppController {
     this._wsClient.sendControl({ type: 'manual_revise' })
   }
 
+  async uploadGlossary(file: File): Promise<boolean> {
+    const { parseGlossaryFile } = await import('../glossary-import')
+    let entries: Array<{ source: string; target: string; keep_original?: boolean }>
+    try {
+      const text = await file.text()
+      entries = parseGlossaryFile(file.name, text)
+    } catch {
+      return false
+    }
+
+    if (entries.length === 0) {
+      return false
+    }
+    this._wsClient.sendControl({ type: 'set_glossary', entries })
+    return true
+  }
+
   setSubtitleMode(mode: SubtitleMode): void {
     this._subtitleStore.setMode(mode)
     this._subtitleRenderer?.setMode(mode)
@@ -291,6 +313,9 @@ export class AppController {
         this._subtitleStore.upsertSource(
           message.segment_id,
           message.text,
+          undefined,
+          message.segment_index,
+          message.speaker_id,
         )
         this._syncSubtitles()
         break
@@ -298,12 +323,10 @@ export class AppController {
       case 'translation_token':
         if (message.is_final) {
           this._subtitleStore.finalizeSubtitle(message.segment_id)
-          const entry = this._subtitleStore.getEntry(message.segment_id)
-          if (entry) {
-            this._ttsPlayer.enqueueFinalTranslation(entry.segmentId, entry.translatedText)
-          }
+          this._flushStreamingTts(message.segment_id)
         } else {
-          this._subtitleStore.appendToken(message.segment_id, message.token)
+          this._subtitleStore.appendToken(message.segment_id, message.token, message.segment_index)
+          this._handleStreamingTts(message.segment_id, message.token)
         }
         this._syncSubtitles()
         break
@@ -351,6 +374,38 @@ export class AppController {
         this._updateState({ status: 'error' })
         break
     }
+  }
+
+  private _handleStreamingTts(segmentId: string, token: string): void {
+    if (!token) {
+      return
+    }
+
+    const buffer = (this._ttsSentenceBuffers.get(segmentId) ?? '') + token
+    const sentences = splitSentences(buffer)
+    if (sentences.length <= 1) {
+      this._ttsSentenceBuffers.set(segmentId, buffer)
+      return
+    }
+
+    // 前面的都是完整句子，立即送去合成，不等整个 segment 翻译完
+    const counter = this._ttsSentenceCounters.get(segmentId) ?? 0
+    for (let index = 0; index < sentences.length - 1; index += 1) {
+      this._ttsPlayer.speakStreamSentence(segmentId, sentences[index], counter + index)
+    }
+    this._ttsSentenceCounters.set(segmentId, counter + sentences.length - 1)
+    this._ttsSentenceBuffers.set(segmentId, sentences[sentences.length - 1])
+  }
+
+  private _flushStreamingTts(segmentId: string): void {
+    const remaining = this._ttsSentenceBuffers.get(segmentId)
+    if (remaining && remaining.trim()) {
+      const counter = this._ttsSentenceCounters.get(segmentId) ?? 0
+      this._ttsPlayer.speakStreamSentence(segmentId, remaining, counter)
+      this._ttsSentenceCounters.set(segmentId, counter + 1)
+    }
+    this._ttsSentenceBuffers.delete(segmentId)
+    this._ttsSentenceCounters.delete(segmentId)
   }
 
   private _syncSubtitles(): void {

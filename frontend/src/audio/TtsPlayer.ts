@@ -31,6 +31,7 @@ interface TtsCallbacks {
 
 
 interface QueuedUtterance {
+  key: string
   segmentId: string
   text: string
 }
@@ -43,8 +44,9 @@ export class TtsPlayer {
   private _diagnostics: TtsDiagnostics
   private _callbacks: TtsCallbacks | null = null
   private _queue: QueuedUtterance[] = []
-  private _spokenSegmentIds: Set<string> = new Set()
-  private _speakingSegmentId: string | null = null
+  private _spokenKeys: Set<string> = new Set()
+  private _segmentNextIndex: Map<string, number> = new Map()
+  private _speakingKey: string | null = null
 
   constructor() {
     this._speech = getSpeechSynthesis()
@@ -113,7 +115,24 @@ export class TtsPlayer {
       return
     }
 
-    this._enqueueOrUpdate(segmentId, text, false)
+    const index = this._segmentNextIndex.get(segmentId) ?? 0
+    this._segmentNextIndex.set(segmentId, index + 1)
+    this._enqueue(segmentId, `${segmentId}:${index}`, text)
+  }
+
+  /**
+   * 流式 TTS：翻译 token 到达时，按句末标点切分出的完整句子立即入队合成，
+   * 不必等整个 segment 翻译完。
+   *
+   * @param segmentId 片段 ID。
+   * @param text 一句完整的译文。
+   * @param index 该 segment 内的句子序号（用于去重）。
+   */
+  speakStreamSentence(segmentId: string, text: string, index: number): void {
+    if (!this._settings.enabled) {
+      return
+    }
+    this._enqueue(segmentId, `${segmentId}:${index}`, text)
   }
 
   handleRevisedTranslation(segmentId: string, text: string): void {
@@ -121,12 +140,35 @@ export class TtsPlayer {
       return
     }
 
-    this._enqueueOrUpdate(segmentId, text, true)
+    const normalizedText = normalizeSpeechText(text)
+    if (!normalizedText) {
+      this._skip('blank')
+      return
+    }
+
+    // 更新该 segment 队列中尚未朗读的项
+    const queued = this._queue.find((item) => item.segmentId === segmentId)
+    if (queued) {
+      queued.text = normalizedText
+      this._notifyDiagnostics()
+      return
+    }
+
+    // 该 segment 已朗读过（或正在朗读）：修正太晚，跳过
+    if (this._isSegmentSpokenOrSpeaking(segmentId)) {
+      this._skip('late-revision')
+      return
+    }
+
+    const index = this._segmentNextIndex.get(segmentId) ?? 0
+    this._segmentNextIndex.set(segmentId, index + 1)
+    this._enqueue(segmentId, `${segmentId}:${index}`, text)
   }
 
   reset(): void {
     this.cancelQueue()
-    this._spokenSegmentIds = new Set()
+    this._spokenKeys = new Set()
+    this._segmentNextIndex = new Map()
     this._diagnostics = {
       ...DEFAULT_TTS_DIAGNOSTICS,
       isSupported: this._isSupported,
@@ -141,18 +183,14 @@ export class TtsPlayer {
     }
 
     this._queue = []
-    this._speakingSegmentId = null
+    this._speakingKey = null
     this._notifyDiagnostics()
   }
 
-  private _enqueueOrUpdate(segmentId: string, text: string, isRevision: boolean): void {
+  private _enqueue(segmentId: string, key: string, text: string): void {
     const normalizedText = normalizeSpeechText(text)
     if (!normalizedText) {
-      this._diagnostics = {
-        ...this._diagnostics,
-        skippedUtterances: this._diagnostics.skippedUtterances + 1,
-      }
-      this._notifyDiagnostics()
+      this._skip('blank')
       return
     }
 
@@ -166,25 +204,13 @@ export class TtsPlayer {
       return
     }
 
-    const queuedItem = this._queue.find((item) => item.segmentId === segmentId)
-    if (queuedItem) {
-      queuedItem.text = normalizedText
-      this._notifyDiagnostics()
-      return
-    }
-
-    if (this._speakingSegmentId === segmentId || this._spokenSegmentIds.has(segmentId)) {
-      if (isRevision) {
-        this._diagnostics = {
-          ...this._diagnostics,
-          skippedUtterances: this._diagnostics.skippedUtterances + 1,
-        }
-        this._notifyDiagnostics()
-      }
+    if (this._spokenKeys.has(key) || this._speakingKey === key) {
+      this._skip('duplicate')
       return
     }
 
     this._queue.push({
+      key,
       segmentId,
       text: normalizedText,
     })
@@ -193,7 +219,7 @@ export class TtsPlayer {
   }
 
   private _drainQueue(): void {
-    if (!this._settings.enabled || !this._speech || this._speakingSegmentId) {
+    if (!this._settings.enabled || !this._speech || this._speakingKey) {
       return
     }
 
@@ -213,12 +239,12 @@ export class TtsPlayer {
       utterance.voice = voice
     }
 
-    this._speakingSegmentId = item.segmentId
+    this._speakingKey = item.key
     this._notifyDiagnostics()
 
     utterance.onend = () => {
-      this._spokenSegmentIds.add(item.segmentId)
-      this._speakingSegmentId = null
+      this._spokenKeys.add(item.key)
+      this._speakingKey = null
       this._diagnostics = {
         ...this._diagnostics,
         spokenUtterances: this._diagnostics.spokenUtterances + 1,
@@ -229,7 +255,7 @@ export class TtsPlayer {
     }
 
     utterance.onerror = (event: SpeechSynthesisErrorEvent) => {
-      this._speakingSegmentId = null
+      this._speakingKey = null
       this._diagnostics = {
         ...this._diagnostics,
         failedUtterances: this._diagnostics.failedUtterances + 1,
@@ -242,12 +268,33 @@ export class TtsPlayer {
     this._speech.speak(utterance)
   }
 
+  private _isSegmentSpokenOrSpeaking(segmentId: string): boolean {
+    if (this._speakingKey?.startsWith(`${segmentId}:`)) {
+      return true
+    }
+    for (const key of this._spokenKeys) {
+      if (key.startsWith(`${segmentId}:`)) {
+        return true
+      }
+    }
+    return false
+  }
+
+  private _skip(reason: 'blank' | 'late-revision' | 'duplicate'): void {
+    void reason
+    this._diagnostics = {
+      ...this._diagnostics,
+      skippedUtterances: this._diagnostics.skippedUtterances + 1,
+    }
+    this._notifyDiagnostics()
+  }
+
   private _notifyDiagnostics(): void {
     this._diagnostics = {
       ...this._diagnostics,
       isSupported: this._isSupported,
       enabled: this._settings.enabled,
-      isSpeaking: this._speakingSegmentId !== null,
+      isSpeaking: this._speakingKey !== null,
       queueLength: this._queue.length,
     }
     this._callbacks?.onDiagnosticsChange(this.diagnostics)

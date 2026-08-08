@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   formatLearningNotesMarkdown,
@@ -7,6 +7,8 @@ import {
   formatVttSubtitles,
   hasExportableSubtitles,
 } from '../subtitle/subtitle-export'
+import { useVirtualizedSubtitles } from '../subtitle/virtual-scroll'
+import { speakerColor } from '../subtitle/speaker'
 import type { UiText } from '../i18n'
 import type { SubtitleEntry } from '../types'
 
@@ -68,6 +70,7 @@ const summaryStyle: React.CSSProperties = {
 
 
 const listStyle: React.CSSProperties = {
+  position: 'relative',
   display: 'flex',
   flexDirection: 'column',
   alignItems: 'stretch',
@@ -77,6 +80,10 @@ const listStyle: React.CSSProperties = {
   padding: '14px',
   overscrollBehavior: 'contain',
 }
+
+
+/** 虚拟滚动用的估算条目高度（px）。 */
+const SUBTITLE_ITEM_HEIGHT = 140
 
 
 const footerStyle: React.CSSProperties = {
@@ -97,6 +104,30 @@ export const SubtitleHistoryPanel: React.FC<SubtitleHistoryPanelProps> = ({
 }) => {
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'failed'>('idle')
   const text = uiText.history
+  const listRef = useRef<HTMLDivElement>(null)
+  const [viewportHeight, setViewportHeight] = useState(320)
+
+  // 长会议历史可达数千条：只渲染视口内条目（虚拟滚动），保持主线程流畅
+  const reversedEntries = useMemo(() => entries.slice().reverse(), [entries])
+  const { visible, offsetY, totalHeight, onScroll } = useVirtualizedSubtitles(
+    reversedEntries,
+    viewportHeight,
+    SUBTITLE_ITEM_HEIGHT,
+  )
+
+  useEffect(() => {
+    const element = listRef.current
+    if (!element) {
+      return
+    }
+    const updateHeight = (): void => {
+      setViewportHeight(element.clientHeight || 320)
+    }
+    updateHeight()
+    const observer = new ResizeObserver(updateHeight)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [isOpen])
 
   const stats = useMemo(() => {
     return entries.reduce(
@@ -141,7 +172,7 @@ export const SubtitleHistoryPanel: React.FC<SubtitleHistoryPanelProps> = ({
     return null
   }
 
-  const recentEntries = entries.slice(-30).reverse()
+  const recentEntries = visible
   const canExport = hasExportableSubtitles(entries)
   const canExportDiagnostics = diagnosticsText.trim().length > 0
 
@@ -234,7 +265,7 @@ export const SubtitleHistoryPanel: React.FC<SubtitleHistoryPanelProps> = ({
             {text.title}
           </div>
           <div style={{ color: '#91a0b3', fontSize: '12px', marginTop: '4px' }}>
-            {text.latestSummary(recentEntries.length, entries.length)}
+            {text.latestSummary(entries.length, entries.length)}
           </div>
         </div>
         <div style={{ borderRadius: '12px', overflow: 'hidden' }}>
@@ -261,7 +292,9 @@ export const SubtitleHistoryPanel: React.FC<SubtitleHistoryPanelProps> = ({
         <SummaryStat label={text.revised} value={stats.revised} />
       </div>
 
-      <div style={listStyle}>
+      <div ref={listRef} style={listStyle} onScroll={onScroll}>
+        {/* 顶部占位：撑起滚动条比例 */}
+        <div style={{ height: offsetY, flexShrink: 0 }} />
         {recentEntries.length === 0 ? (
           <div
             style={{
@@ -303,13 +336,20 @@ export const SubtitleHistoryPanel: React.FC<SubtitleHistoryPanelProps> = ({
               }}
             >
               <span>{formatTime(entry.timestamp)}</span>
-              {entry.isRevised ? (
-                <span style={{ color: '#f4c84c', fontWeight: 700 }}>
-                  {entry.revisionReason === 'asr_correction'
-                    ? text.asrRevised
-                    : text.translationRevised}
-                </span>
-              ) : null}
+              <span style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                {entry.speaker ? (
+                  <span style={{ color: speakerColor(entry.speaker), fontWeight: 700 }}>
+                    {entry.speaker}
+                  </span>
+                ) : null}
+                {entry.isRevised ? (
+                  <span style={{ color: '#f4c84c', fontWeight: 700 }}>
+                    {entry.revisionReason === 'asr_correction'
+                      ? text.asrRevised
+                      : text.translationRevised}
+                  </span>
+                ) : null}
+              </span>
             </div>
             {entry.sourceText ? (
               <div style={{ color: '#b9c5d3', fontSize: '13px', lineHeight: 1.42, wordBreak: 'break-word' }}>
@@ -323,6 +363,13 @@ export const SubtitleHistoryPanel: React.FC<SubtitleHistoryPanelProps> = ({
             ) : null}
           </article>
         ))}
+        {/* 底部占位：撑起滚动条比例 */}
+        <div
+          style={{
+            height: Math.max(0, totalHeight - offsetY - recentEntries.length * SUBTITLE_ITEM_HEIGHT),
+            flexShrink: 0,
+          }}
+        />
       </div>
 
       <div style={footerStyle}>

@@ -1,0 +1,10 @@
+{
+  "source": "LibriSpeech test-clean (hf-internal-testing/librispeech_asr_dummy)",
+  "license": "CC BY 4.0 (LibriSpeech)",
+  "sample": "validation-00000-of-00001.parquet row 0",
+  "reference_transcript": "MISTER QUILTER IS THE APOSTLE OF THE MIDDLE CLASSES AND WE ARE GLAD TO WELCOME HIS GOSPEL",
+  "reference_translation": "奎尔特先生是中产阶级的使徒，我们很高兴欢迎他的福音。",
+  "duration_seconds": 5.86,
+  "sample_rate": 16000,
+  "channels": 1
+}
