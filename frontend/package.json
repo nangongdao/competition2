@@ -5,17 +5,29 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "test": "node --test --import tsx src/audio/AudioCapture.test.ts src/audio/TtsPlayer.test.ts src/audio/sentence.test.ts src/desktop/overlay.test.ts src/desktop/settings.test.ts src/desktop/web-overlay.test.ts src/glossary-import.test.ts src/i18n.test.ts src/network/WsClient.test.ts src/network/ws-url.test.ts src/subtitle/SubtitleStore.test.ts src/subtitle/subtitle-export.test.ts src/subtitle/virtual-scroll.test.ts",
+    "test": "node --test --import tsx src/audio/AudioCapture.test.ts src/audio/AudioSourceManager.test.ts src/audio/BackendTtsPlayer.test.ts src/audio/FileAudioSource.test.ts src/audio/TtsPlayer.test.ts src/audio/sentence.test.ts src/desktop/overlay.test.ts src/desktop/settings.test.ts src/desktop/system-audio.test.ts src/desktop/tauri.test.ts src/desktop/web-overlay.test.ts src/export/session-bundle.test.ts src/glossary-import.test.ts src/glossary/glossary-api.test.ts src/collaboration/collaboration-api.test.ts src/subscription/subscription-api.test.ts src/cost/cost-api.test.ts src/session-history/session-history-api.test.ts src/i18n.test.ts src/network/WsClient.test.ts src/network/ws-url.test.ts src/subtitle/SubtitleStore.test.ts src/subtitle/subtitle-export.test.ts src/subtitle/subtitle-style.test.ts src/subtitle/virtual-scroll.test.ts src/summary/session-summary.test.ts src/revision/revision-history.test.ts src/shortcuts/shortcuts.test.ts src/subtitle/subtitle-search.test.ts src/subtitle/subtitle-seek.test.ts",
     "build": "tsc && vite build",
+    "e2e": "npm run build && playwright test",
+    "e2e:headed": "npm run build && playwright test --headed",
     "desktop:window": "electron electron/main.cjs",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2.11.1",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "lucide-react": "^1.30.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "xterm": "^5.3.0",
     "zustand": "^4.4.7"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "@tauri-apps/cli": "^2.11.4",
     "@types/react": "^18.2.43",
     "@types/react-dom": "^18.2.17",
     "@vitejs/plugin-react": "^4.2.1",

@@ -8,15 +8,23 @@ import unittest
 
 
 BACKEND_ROOT = Path(__file__).resolve().parent
-if str(BACKEND_ROOT) not in sys.path:
-    sys.path.insert(0, str(BACKEND_ROOT))
 
-from services.glossary import (
-    GlossaryEntry,
-    build_glossary_prompt,
-    parse_glossary_csv,
-    parse_glossary_json,
-)
+# 直接按文件加载 glossary 模块，避免触发 services/__init__.py 的重依赖导入链。
+# glossary.py 是纯标准库实现，可零重依赖运行。
+import importlib.util
+
+_glossary_path = BACKEND_ROOT / "services" / "glossary.py"
+_spec = importlib.util.spec_from_file_location("glossary", _glossary_path)
+_glossary = importlib.util.module_from_spec(_spec)
+assert _spec.loader is not None
+sys.modules["glossary"] = _glossary
+_spec.loader.exec_module(_glossary)
+
+GlossaryEntry = _glossary.GlossaryEntry
+build_glossary_prompt = _glossary.build_glossary_prompt
+normalize_glossary_entries = _glossary.normalize_glossary_entries
+parse_glossary_csv = _glossary.parse_glossary_csv
+parse_glossary_json = _glossary.parse_glossary_json
 
 
 class GlossaryPromptTests(unittest.TestCase):
@@ -94,6 +102,77 @@ class GlossaryParserTests(unittest.TestCase):
     def test_parse_csv_skips_blank_rows(self) -> None:
         entries = parse_glossary_csv("K8s,Kubernetes\n\n , \n")
         self.assertEqual(len(entries), 1)
+
+
+class GlossaryNormalizeTests(unittest.TestCase):
+    """术语归一化与去重回归矩阵（方向 10）。"""
+
+    def test_empty_input_returns_empty(self) -> None:
+        self.assertEqual(normalize_glossary_entries([]), [])
+
+    def test_blank_source_dropped(self) -> None:
+        entries = [
+            GlossaryEntry(source="   ", target="x"),
+            GlossaryEntry(source="", target="y"),
+            GlossaryEntry(source="K8s", target="Kubernetes"),
+        ]
+        result = normalize_glossary_entries(entries)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].source, "K8s")
+
+    def test_overlong_source_dropped(self) -> None:
+        long_term = "a" * 100
+        entries = [
+            GlossaryEntry(source=long_term, target="drop"),
+            GlossaryEntry(source="K8s", target="Kubernetes"),
+        ]
+        result = normalize_glossary_entries(entries, max_term_length=64)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].source, "K8s")
+
+    def test_case_insensitive_dedup_later_wins_target(self) -> None:
+        entries = [
+            GlossaryEntry(source="Kubernetes", target="旧译"),
+            GlossaryEntry(source="kubernetes", target="新译"),
+        ]
+        result = normalize_glossary_entries(entries)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].source, "Kubernetes")
+        self.assertEqual(result[0].target, "新译")
+
+    def test_keep_original_merged_from_any_entry(self) -> None:
+        entries = [
+            GlossaryEntry(source="ML", target="机器学习", keep_original=False),
+            GlossaryEntry(source="ml", target="", keep_original=True),
+        ]
+        result = normalize_glossary_entries(entries)
+        self.assertEqual(len(result), 1)
+        self.assertTrue(result[0].keep_original)
+
+    def test_keep_original_survives_later_overwrite(self) -> None:
+        entries = [
+            GlossaryEntry(source="ML", target="", keep_original=True),
+            GlossaryEntry(source="ml", target="机器学习"),
+        ]
+        result = normalize_glossary_entries(entries)
+        self.assertEqual(len(result), 1)
+        self.assertTrue(result[0].keep_original)
+        self.assertEqual(result[0].target, "机器学习")
+
+    def test_max_entries_truncates_stably(self) -> None:
+        entries = [GlossaryEntry(source=f"term-{index}", target="t") for index in range(10)]
+        result = normalize_glossary_entries(entries, max_entries=3)
+        self.assertEqual(len(result), 3)
+        self.assertEqual([entry.source for entry in result], ["term-0", "term-1", "term-2"])
+
+    def test_order_stable_and_distinct(self) -> None:
+        entries = [
+            GlossaryEntry(source="B", target="1"),
+            GlossaryEntry(source="A", target="2"),
+            GlossaryEntry(source="C", target="3"),
+        ]
+        result = normalize_glossary_entries(entries)
+        self.assertEqual([entry.source for entry in result], ["B", "A", "C"])
 
 
 if __name__ == "__main__":

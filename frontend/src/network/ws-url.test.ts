@@ -3,6 +3,7 @@ import { describe, it } from 'node:test'
 
 import {
   getRuntimeWebSocketUrlFromSearch,
+  resolveTerminalWebSocketUrl,
   resolveWebSocketBaseUrl,
 } from './ws-url'
 
@@ -80,5 +81,29 @@ describe('normalizeWebSocketUrl — 安全校验', () => {
       resolveWebSocketBaseUrl({ runtimeUrl: 'ws://LOCALHOST:8000/api' }),
       'ws://LOCALHOST:8000/api',
     )
+  })
+})
+
+describe('resolveTerminalWebSocketUrl', () => {
+  it('将翻译 WS 路径替换为终端路径', () => {
+    const url = resolveTerminalWebSocketUrl({
+      runtimeUrl: 'ws://127.0.0.1:49321/api/v1/ws/translate',
+    })
+
+    assert.equal(url, 'ws://127.0.0.1:49321/api/v1/ws/terminal')
+  })
+
+  it('无运行时 URL 时回落到默认端口终端地址', () => {
+    const url = resolveTerminalWebSocketUrl({ hostname: '127.0.0.1' })
+
+    assert.equal(url, 'ws://127.0.0.1:8000/api/v1/ws/terminal')
+  })
+
+  it('带尾斜杠的翻译 URL 也能正确转换', () => {
+    const url = resolveTerminalWebSocketUrl({
+      runtimeUrl: 'ws://127.0.0.1:8000/api/v1/ws/translate/',
+    })
+
+    assert.equal(url, 'ws://127.0.0.1:8000/api/v1/ws/terminal')
   })
 })

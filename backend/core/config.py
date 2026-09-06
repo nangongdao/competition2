@@ -66,12 +66,23 @@ class Settings(BaseSettings):
     #: 更早句子的压缩长度上限（字符），超出截断以节省 input token
     context_older_max_chars: int = 40
 
+    # Translation style (Phase 3)
+    #: 翻译风格预设：concise（简洁）/ faithful（忠实）/ lecture（讲义式总结）
+    translation_style: str = "concise"
+
     # Revision engine
     revision_enabled: bool = True
     revision_trigger_sentences: int = 3
     revision_max_window: int = 8
     revision_silence_seconds: float = 3.0
     asr_correction_confidence_threshold: float = -0.7
+    # 阶段 4：防止过度修正与循环修正
+    #: 单个片段允许的最大修正次数（超过后不再修正该片段，防止震荡）
+    revision_max_per_segment: int = 2
+    #: 同一片段两次修正的最小间隔秒数（节流，避免连续触发）
+    revision_min_interval_seconds: float = 5.0
+    #: 整场会话总修正次数上限（防御性保护，防 API 成本失控）
+    revision_max_total: int = 200
 
     # Audio
     audio_sample_rate: int = 16000
@@ -97,12 +108,97 @@ class Settings(BaseSettings):
     segment_silence_boundary_ms: int = 400
     #: Silero VAD 语音概率阈值
     vad_threshold: float = 0.5
+    #: VAD 最小静音时长（毫秒）—— 尾部静音达到该值即断句
+    vad_min_silence_ms: int = 500
+    #: VAD 最小语音时长（毫秒）—— 过短不切分，避免碎片化
+    vad_min_speech_ms: int = 250
+    #: VAD 最大句子时长（秒）—— 达到强制断句，防止延迟过高
+    vad_max_sentence_s: int = 15
+
+    # Translation memory (TM)
+    #: 是否启用翻译记忆（命中时短路 / 注入 few-shot 样例）
+    tm_enabled: bool = True
+    #: 每个语言对最多缓存句对数
+    tm_max_entries_per_pair: int = 200
+    #: 精确匹配阈值：相似度达到该值直接短路复用，不再调用上游
+    tm_exact_threshold: float = 0.96
+    #: 模糊匹配阈值：达到该值的命中作为 few-shot 样例注入 prompt
+    tm_fuzzy_threshold: float = 0.72
+
+    # TTS 语音合成
+    #: 后端合成引擎：off 禁用 / edge（edge-tts 免费） / openai（OpenAI 兼容）
+    tts_engine: str = "off"
+    #: edge-tts 语音名（zh-CN 女声；也可选 zh-CN-YunxiNeural 男声等）
+    tts_voice: str = "zh-CN-XiaoxiaoNeural"
+    #: edge-tts 语速（+0% / +10% / -10% 等）
+    tts_rate: str = "+0%"
+    #: edge-tts 音量（+0% / +10% / -10% 等；越大越响）
+    tts_volume: str = "+0%"
+    #: 单个片段合成超时（秒）
+    tts_timeout_seconds: int = 30
+    #: 会话内最多缓存合成结果条数（防止内存无限增长）
+    tts_cache_max_entries: int = 256
+    #: TTS 合成结果磁盘缓存目录（跨会话复用，重启不丢；为空则仅用内存缓存）
+    tts_cache_dir: str = "config/tts-cache"
+    #: 磁盘缓存最大条目数（防止磁盘无限膨胀，超过后清理最旧条目）
+    tts_cache_max_files: int = 2048
+
+    #: OpenAI 兼容 TTS 引擎配置（tts_engine=openai 时生效）
+    tts_openai_model: str = "tts-1"
+    tts_openai_base_url: str = "https://api.openai.com/v1"
+    tts_openai_api_key: str = ""
+
+    # ASR hotwords (Phase 2: 术语热词注入 ASR)
+    #: 是否把术语表 source 注入 ASR 热词，提升技术术语/品牌名识别准确率
+    asr_hotwords_enabled: bool = True
+    #: 单次 ASR 请求热词上限（防 prompt/hotwords 膨胀拖慢解码）
+    asr_hotwords_max_terms: int = 30
+    #: 单个热词最大长度（字符），超长条目不参与热词（避免注入噪音）
+    asr_hotwords_max_term_length: int = 40
+
+    # ASR 文本后处理（阶段 2：标点/空白/大小写恢复）
+    #: 是否对 ASR 输出做轻量文本规范化（折叠空白、补标点、句首大写）
+    asr_text_postprocess_enabled: bool = True
 
     # Speaker diarization
     #: 是否启用说话人分离（默认关闭：内置谱特征为占位实现，生产建议接 pyannote）
     diarization_enabled: bool = False
     #: 判定为同一说话人的余弦相似度阈值
     diarization_similarity_threshold: float = 0.95
+
+    # Translation Memory (V5.3)
+    #: 是否启用翻译记忆库（相似句直接复用译文，节省 API 调用）
+    translation_memory_enabled: bool = True
+    #: 记忆库命中相似度阈值（归一化后 0~1，越大越严格）
+    translation_memory_threshold: float = 0.82
+
+    # Subscription (V5.5)
+    #: 默认套餐：free | pro | team | enterprise（首次启动生效，之后由 REST/面板切换并持久化）
+    subscription_plan: str = "free"
+
+    # 商用成本模型（成本估算与熔断软上限）
+    #: NMT 输入 token 单价（美元 / 百万 token）
+    cost_nmt_input_per_m: float = 0.15
+    #: NMT 输出 token 单价（美元 / 百万 token）
+    cost_nmt_output_per_m: float = 0.60
+    #: 每日成本软上限（美元），超过后给出降级建议（不中断翻译）
+    cost_daily_limit_usd: float = 2.0
+
+    # TTS（后端语音合成）
+    #: TTS 引擎：edge（免费、无需 key）| openai（OpenAI 兼容 API）| off
+    tts_engine: str = "edge"
+    #: edge-tts 语音名（zh-CN 女声；也可选 zh-CN-YunxiNeural 男声等）
+    tts_voice: str = "zh-CN-XiaoxiaoNeural"
+    #: edge-tts 语速（+0% / +10% / -10% 等）
+    tts_rate: str = "+0%"
+    #: OpenAI TTS 模型名
+    tts_openai_model: str = "tts-1"
+    tts_openai_base_url: str = "https://api.openai.com/v1"
+    tts_openai_api_key: str = ""
+    #: 单次合成超时（秒）
+    tts_timeout_seconds: int = 30
+    #: 合成结果缓存上限（条目数），防长期运行内存无限增长
+    tts_cache_max_entries: int = 256
 
     model_config = SettingsConfigDict(
         env_file=tuple(str(path) for path in ENV_FILE_PATHS),

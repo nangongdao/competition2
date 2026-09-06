@@ -1,3 +1,0 @@
-{"file": ".trellis/spec/backend/ai-interpreter-session-diagnostics.md", "reason": "Quality check must verify runner and artifact validation contracts."}
-{"file": ".trellis/spec/backend/quality.md", "reason": "Backend/tool validation checklist before commit."}
-{"file": ".trellis/spec/shared/code-quality.md", "reason": "Shared code quality checklist for touched TypeScript/Python-adjacent tooling."}

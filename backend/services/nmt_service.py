@@ -13,6 +13,14 @@ from core.exceptions import NMTError
 from models.segment import ContextWindow, Segment
 from services.glossary import GlossaryEntry, build_glossary_prompt
 from services.language_config import source_language_label, target_language_label
+from services.translation_memory import (
+    TranslationMemoryService,
+    build_language_pair,
+)
+from services.translation_style import (
+    normalize_style_preset,
+    style_preset_instruction,
+)
 
 
 #: 可重试的上游错误类型（限流与服务端错误）
@@ -56,6 +64,8 @@ class NMTService:
 5. Output ONLY the target-language translation, no explanations
 6. Keep the translation concise and close to the original sentence length
 7. For incomplete sentences, translate only what is available
+8. Keep all numbers, percentages, dates, currencies, and units exactly as spoken (e.g. 50%, 2026, $1.2M, 3.5 GHz); do not round, estimate, or add/remove digits
+9. Keep proper nouns, names, product names, and acronyms (e.g. Kubernetes, OpenAI, GPT-4) in their original form unless a well-known Chinese equivalent exists (e.g. Google -> 谷歌)
 """
 
     SYSTEM_PROMPT = f"""You are a real-time interpreter translating English speech to Simplified Chinese.
@@ -66,6 +76,26 @@ class NMTService:
         self._engine = settings.nmt_engine
         self._client = None
         self._glossary: list[GlossaryEntry] = []
+        #: 翻译风格预设（阶段 3）：简洁 / 忠实 / 讲义式总结
+        self._style_preset = normalize_style_preset(settings.translation_style)
+        #: 翻译记忆库（V5.3）：相似句直接复用译文，省 API 调用
+        self._tm: TranslationMemoryService | None = None
+
+    def set_style_preset(self, style_preset: object) -> None:
+        """切换翻译风格预设（阶段 3 字幕风格控制）。
+
+        Args:
+            style_preset: 风格名（简洁/忠实/讲义式总结），未知值回退默认。
+        """
+        normalized = normalize_style_preset(style_preset)
+        if normalized != self._style_preset:
+            logger.info("Translation style preset updated: {} -> {}", self._style_preset, normalized)
+        self._style_preset = normalized
+
+    @property
+    def style_preset(self) -> str:
+        """当前生效的翻译风格预设名。"""
+        return self._style_preset
 
     def set_glossary(self, entries: list[GlossaryEntry]) -> None:
         """设置会话术语表（领域自适应）。
@@ -75,6 +105,20 @@ class NMTService:
         """
         self._glossary = list(entries)
         logger.info("Glossary updated with {} entries", len(self._glossary))
+
+    def attach_translation_memory(self, tm: TranslationMemoryService | None) -> None:
+        """绑定会话级翻译记忆库（V5.3）。
+
+        Args:
+            tm: 会话级记忆库实例；传 None 关闭记忆库功能。
+        """
+        self._tm = tm
+        if tm is not None:
+            logger.info(
+                "Translation memory attached ({} entries, threshold={})",
+                tm.size,
+                tm.stats["threshold"],
+            )
 
     async def initialize(self) -> None:
         if self._engine == "claude":
@@ -117,7 +161,17 @@ class NMTService:
 
         失败时不中断会话，而是降级为原文透传，保证字幕不断流 ——
         同传场景下"降级的字幕"远好于"没有字幕"。
+
+        V5.3 翻译记忆库：翻译前先查记忆库，命中（相似度 >= 阈值）直接复用
+        已翻译结果并立即结束，完全不调用上游 API。
         """
+        # 翻译记忆库命中：直接复用译文，省一次 API 调用
+        tm_hit = self._lookup_translation_memory(current)
+        if tm_hit is not None:
+            yield tm_hit
+            yield "<FINAL>"
+            return
+
         if self._engine not in {"claude", "openai"}:
             raise NMTError(f"Unknown NMT engine: {self._engine}")
 
@@ -164,6 +218,62 @@ class NMTService:
             return
         async for token in self._translate_openai(context, current):
             yield token
+
+    def _lookup_translation_memory(self, current: Segment) -> str | None:
+        """查询翻译记忆库（V5.3）。
+
+        Args:
+            current: 当前待翻译片段。
+
+        Returns:
+            命中时的译文；未命中或记忆库未启用时返回 None。
+        """
+        tm = self._tm
+        if tm is None or not settings.translation_memory_enabled:
+            return None
+        if not current.text_asr.strip():
+            return None
+
+        language_pair = build_language_pair(
+            current.source_language,
+            current.target_language,
+        )
+        match = tm.lookup(current.text_asr, language_pair=language_pair)
+        if match is None:
+            return None
+
+        logger.debug(
+            "Translation memory hit for {} (sim={:.2f}): {} -> {}",
+            current.id,
+            match.similarity,
+            match.source[:40],
+            match.translated[:40],
+        )
+        return match.translated
+
+    def record_translation(self, current: Segment, translated: str) -> None:
+        """把翻译完成的句对写回记忆库（V5.3）。
+
+        Args:
+            current: 已翻译的片段（含源句与语言对）。
+            translated: 最终译文。
+        """
+        tm = self._tm
+        if tm is None or not settings.translation_memory_enabled:
+            return
+        if not current.text_asr.strip() or not translated.strip():
+            return
+        language_pair = build_language_pair(
+            current.source_language,
+            current.target_language,
+        )
+        tm.add(current.text_asr, translated, language_pair=language_pair)
+
+    def translation_memory_stats(self) -> dict[str, object] | None:
+        """返回记忆库统计（无记忆库时返回 None）。"""
+        if self._tm is None:
+            return None
+        return self._tm.stats
 
     async def complete_text(self, prompt: str, *, system_prompt: str) -> str:
         if self._engine == "claude":
@@ -281,9 +391,11 @@ class NMTService:
     def _build_system_prompt(self, current: Segment) -> str:
         source_label = source_language_label(current.source_language)
         target_label = target_language_label(current.target_language)
+        style_instruction = style_preset_instruction(self._style_preset)
+        style_block = f"\n\n{style_instruction}" if style_instruction else ""
         return f"""You are a real-time interpreter translating {source_label} speech to {target_label}.
 
-{self.RULES_PROMPT}"""
+{self.RULES_PROMPT}{style_block}"""
 
     def _build_translation_prompt(self, context: ContextWindow, current: Segment) -> str:
         context_text = context.to_context_text(

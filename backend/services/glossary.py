@@ -86,6 +86,46 @@ def parse_glossary_json(raw: object) -> list[GlossaryEntry]:
     return entries
 
 
+def normalize_glossary_entries(entries: Iterable[GlossaryEntry], *, max_term_length: int = 64, max_entries: int = 5000) -> list[GlossaryEntry]:
+    """对术语表条目做归一化与去重，供模糊匹配回归使用。
+
+    处理四类边界：
+    - 空白/纯空白 source 丢弃；超长 source 丢弃（防 prompt 膨胀）。
+    - 同一 source 大小写不敏感地去重，后者覆盖前者（与翻译记忆库覆盖语义一致）。
+    - keep_original 优先保留（若某条要求保持原文，则不丢失该标记）。
+    - 超过 max_entries 时仅保留前 max_entries 条（稳定截断，不抛异常）。
+
+    Args:
+        entries: 原始术语表条目。
+        max_term_length: 单条 source 的最大字符长度，超长丢弃。
+        max_entries: 归一化后最多保留的条目数。
+
+    Returns:
+        归一化去重后的术语表条目列表（保持稳定顺序）。
+    """
+    deduped: dict[str, GlossaryEntry] = {}
+    for entry in entries:
+        source = entry.source.strip() if entry.source else ""
+        if not source or len(source) > max_term_length:
+            continue
+        key = source.lower()
+        existing = deduped.get(key)
+        if existing is None:
+            deduped[key] = GlossaryEntry(
+                source=source,
+                target=entry.target.strip(),
+                keep_original=entry.keep_original,
+            )
+            continue
+        # 重复 source：合并 keep_original（任一要求保持原文则保持），target 取后者
+        deduped[key] = GlossaryEntry(
+            source=existing.source,
+            target=entry.target.strip() or existing.target,
+            keep_original=existing.keep_original or entry.keep_original,
+        )
+    return list(deduped.values())[:max_entries]
+
+
 def parse_glossary_csv(text: str) -> list[GlossaryEntry]:
     """解析 CSV 术语表。
 

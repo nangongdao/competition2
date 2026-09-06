@@ -19,10 +19,30 @@ logs/
 .npm-cache/
 .electron-cache/
 
-config/desktop-settings.local.json
+# Playwright E2E 产物
+frontend/test-results/
+frontend/playwright-report/
 
-.trellis/.runtime/
-.trellis/workspace/
+config/desktop-settings.local.json
+config/tts-cache/
+config/glossary.local.json
+config/glossary.local.json.tmp
+config/subscription.local.json
+config/subscription.local.json.tmp
+config/session-history.local.json
+config/session-history.local.json.tmp
+config/translation-memory.local.json
+config/translation-memory.local.json.tmp
+config/cost.local.json
+config/cost.local.json.tmp
+config/collaboration.local.json
+config/collaboration.local.json.tmp
+
+# Internal agent/task files must not be published.
+.agents/
+.trellis/
+.trez/
+.nezha/
 
 .claude/
 .codex/

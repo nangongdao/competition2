@@ -182,6 +182,7 @@ describe('desktop settings helpers', () => {
       runtime: {
         asrProfile: 'light',
         sourceLanguage: 'en',
+        targetLanguage: 'zh-CN',
       },
     }
 

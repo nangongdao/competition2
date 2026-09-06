@@ -281,6 +281,54 @@ describe('AudioCapture', () => {
     assert.deepEqual(states, ['error'])
     assert.equal(videoTrack.stopCalls, 1)
   })
+
+  it('uses getUserMedia in mic mode and rejects without an audio track', async () => {
+    const audioTrack = new MockMediaStreamTrack('audio')
+    installBrowserMocks(new MockMediaStream([audioTrack]), 'available')
+    const { AudioCapture } = await import('./AudioCapture')
+    const capture = new AudioCapture()
+    capture.setMode('mic')
+
+    const states: AudioCaptureState[] = []
+    const chunks: ArrayBuffer[] = []
+    capture.setCallbacks({
+      onStateChange: (state) => states.push(state),
+      onAudioChunk: (chunk) => chunks.push(chunk),
+    })
+
+    await capture.start()
+    assert.equal(capture.mode, 'mic')
+    assert.equal(capture.state, 'active')
+    assert.equal(capture.captureBackend, 'audio-worklet')
+    assert.equal(audioTrack.addEndedListenerCalls, 1)
+
+    capture.stop()
+    assert.equal(capture.state, 'inactive')
+    assert.equal(audioTrack.stopCalls, 1)
+  })
+
+  it('keeps mic mode after setMode while idle and ignores it while active', async () => {
+    const audioTrack = new MockMediaStreamTrack('audio')
+    installBrowserMocks(new MockMediaStream([audioTrack]), 'available')
+    const { AudioCapture } = await import('./AudioCapture')
+    const capture = new AudioCapture()
+
+    // 空闲时设置 mic 生效。
+    capture.setMode('mic')
+    assert.equal(capture.mode, 'mic')
+
+    capture.setCallbacks({
+      onStateChange: () => undefined,
+      onAudioChunk: () => undefined,
+    })
+    await capture.start()
+
+    // 激活时尝试切回 tab 应被忽略。
+    capture.setMode('tab')
+    assert.equal(capture.mode, 'mic')
+
+    capture.stop()
+  })
 })
 
 
@@ -301,6 +349,7 @@ function installBrowserMocks(stream: MockMediaStream, workletMode: AudioWorkletM
     value: {
       mediaDevices: {
         getDisplayMedia: async () => stream as unknown as MediaStream,
+        getUserMedia: async () => stream as unknown as MediaStream,
       },
     },
     writable: true,

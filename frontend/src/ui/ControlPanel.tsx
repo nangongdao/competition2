@@ -1,18 +1,50 @@
 import React, { useEffect, useRef, useState } from 'react'
 
+import {
+  BookMarked,
+  BookOpenText,
+  ChevronDown,
+  ChevronUp,
+  CircleCheck,
+  CircleX,
+  Cpu,
+  Coins,
+  Database,
+  FileUp,
+  History,
+  Languages,
+  Mic,
+  Palette,
+  Pause,
+  Play,
+  RefreshCw,
+  Settings,
+  Sparkles,
+  TerminalSquare,
+  TrendingUp,
+  Users,
+  Volume2,
+  VolumeX,
+  Wallet,
+} from 'lucide-react'
+
 import type { DesktopOverlayState } from '../desktop/overlay'
 import type { WebOverlayState } from '../desktop/web-overlay'
 import type { UiText } from '../i18n'
 import type {
   AppStatus,
+  AudioSourceType,
   ClientDiagnostics,
   LanguageConfig,
   RevisionReason,
   SessionDiagnostics,
   SourceLanguage,
   SubtitleMode,
+  TargetLanguage,
   TtsDiagnostics,
+  TtsEngine,
   TtsSettings,
+  TranslationStyle,
 } from '../types'
 
 
@@ -27,8 +59,18 @@ interface ControlPanelProps {
   lastRevisionReason: RevisionReason | null
   serverDiagnostics: SessionDiagnostics | null
   clientDiagnostics: ClientDiagnostics
+  audioSource: AudioSourceType
+  audioFileName: string | null
+  audioFileEnded: boolean
   ttsSettings: TtsSettings
   ttsDiagnostics: TtsDiagnostics
+  ttsEngine: TtsEngine
+  /** 当前翻译风格预设（阶段 3）。 */
+  translationStyle: TranslationStyle
+  /** 阶段 2：ASR 术语热词注入开关。 */
+  asrHotwordsEnabled: boolean
+  /** 阶段 8：auto 模式下 Whisper 检测到的源语言代码（如 en/ja），未检测时为 null。 */
+  detectedSourceLanguage: string | null
   desktopOverlayState: DesktopOverlayState
   webOverlayState: WebOverlayState
   uiText: UiText
@@ -37,71 +79,43 @@ interface ControlPanelProps {
   onOpenSettings: () => void
   onManualRevise: () => void
   onOpenHistory: () => void
+  onOpenTerminal: () => void
+  onOpenSummary: () => void
+  onOpenGlossary: () => void
+  onOpenTranslationMemory: () => void
+  onOpenSubtitleStyle: () => void
+  onOpenCollaboration: () => void
+  onOpenSubscription: () => void
+  onOpenCost: () => void
+  onOpenSessionHistory: () => void
+  onOpenRevisionTimeline: () => void
   onGlossaryImport: (file: File) => Promise<boolean> | boolean
   onDesktopOverlayToggle: () => void
   onWebOverlayToggle: () => void
   onSubtitleModeChange: (mode: SubtitleMode) => void
   onSourceLanguageChange: (language: SourceLanguage) => void
+  onTargetLanguageChange: (language: TargetLanguage) => void
+  onTranslationStyleChange: (style: TranslationStyle) => void
+  onAsrHotwordsEnabledChange: (enabled: boolean) => void
   onTtsEnabledChange: (enabled: boolean) => void
+  onTtsEngineChange: (engine: TtsEngine) => void
   onTtsVolumeChange: (volume: number) => void
   onTtsRateChange: (rate: number) => void
+  onAudioSourceChange: (source: AudioSourceType, file?: File) => Promise<boolean> | boolean
 }
 
 
-const STATUS_COLORS: Record<AppStatus, string> = {
-  idle: '#8f9aa8',
-  capturing: '#58b06a',
-  translating: '#4aa3ff',
-  error: '#ff6b5e',
+const STATUS_CLASS: Record<AppStatus, string> = {
+  idle: 'idle',
+  capturing: 'capturing',
+  translating: 'translating',
+  error: 'error',
 }
 
 
-const SOURCE_LANGUAGE_VALUES: SourceLanguage[] = ['auto', 'en', 'ja', 'ko', 'es', 'fr', 'de']
-
-
-const tapSafeButtonStyle: React.CSSProperties = {
-  WebkitTapHighlightColor: 'transparent',
-}
-
-
-const primaryButtonStyle: React.CSSProperties = {
-  ...tapSafeButtonStyle,
-  minHeight: '44px',
-  border: 'none',
-  borderRadius: '12px',
-  cursor: 'pointer',
-  fontSize: '14px',
-  fontWeight: 700,
-  color: '#fff',
-}
-
-
-const secondaryButtonStyle: React.CSSProperties = {
-  ...tapSafeButtonStyle,
-  minHeight: '44px',
-  borderRadius: '12px',
-  border: '1px solid rgba(255,255,255,0.14)',
-  background: 'rgba(255,255,255,0.04)',
-  color: '#d9e1eb',
-  cursor: 'pointer',
-  fontSize: '13px',
-  fontWeight: 600,
-}
-
-
-const metricStyle: React.CSSProperties = {
-  minWidth: 0,
-  padding: '8px 10px',
-  borderRadius: '12px',
-  background: 'rgba(255,255,255,0.04)',
-  border: '1px solid rgba(255,255,255,0.06)',
-}
-
-
-const buttonClipStyle: React.CSSProperties = {
-  borderRadius: '12px',
-  overflow: 'hidden',
-}
+const SOURCE_LANGUAGE_VALUES: SourceLanguage[] = ['auto', 'en', 'zh-CN', 'ja', 'ko', 'es', 'fr', 'de']
+const TARGET_LANGUAGE_VALUES: TargetLanguage[] = ['zh-CN', 'en', 'ja', 'ko', 'es', 'fr', 'de']
+const TRANSLATION_STYLE_VALUES: TranslationStyle[] = ['concise', 'faithful', 'lecture']
 
 
 export const ControlPanel: React.FC<ControlPanelProps> = ({
@@ -115,8 +129,15 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   lastRevisionReason,
   serverDiagnostics,
   clientDiagnostics,
+  audioSource,
+  audioFileName,
+  audioFileEnded,
   ttsSettings,
   ttsDiagnostics,
+  ttsEngine,
+  translationStyle,
+  asrHotwordsEnabled,
+  detectedSourceLanguage,
   desktopOverlayState,
   webOverlayState,
   uiText,
@@ -125,18 +146,35 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   onOpenSettings,
   onManualRevise,
   onOpenHistory,
+  onOpenTerminal,
+  onOpenSummary,
+  onOpenGlossary,
+  onOpenTranslationMemory,
+  onOpenSubtitleStyle,
+  onOpenCollaboration,
+  onOpenSubscription,
+  onOpenCost,
+  onOpenSessionHistory,
+  onOpenRevisionTimeline,
   onGlossaryImport,
   onDesktopOverlayToggle,
   onWebOverlayToggle,
   onSubtitleModeChange,
   onSourceLanguageChange,
+  onTargetLanguageChange,
+  onTranslationStyleChange,
+  onAsrHotwordsEnabledChange,
   onTtsEnabledChange,
+  onTtsEngineChange,
   onTtsVolumeChange,
   onTtsRateChange,
+  onAudioSourceChange,
 }) => {
   const [showDetails, setShowDetails] = useState(false)
   const [glossaryStatus, setGlossaryStatus] = useState<'idle' | 'ok' | 'failed'>('idle')
   const glossaryInputRef = useRef<HTMLInputElement>(null)
+  const audioFileInputRef = useRef<HTMLInputElement>(null)
+  const [fileLoadState, setFileLoadState] = useState<'idle' | 'ok' | 'failed'>('idle')
   const text = uiText.control
   const isActive = status === 'capturing' || status === 'translating'
   const canUseTts = ttsDiagnostics.isSupported
@@ -161,76 +199,48 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
 
   return (
     <aside aria-label={text.ariaLabel} className="live-control-panel">
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '10px',
-          fontSize: '13px',
-          color: '#d9e1eb',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
-          <span
-            aria-hidden="true"
-            style={{
-              display: 'inline-block',
-              width: '8px',
-              height: '8px',
-              marginRight: '8px',
-              borderRadius: '999px',
-              background: STATUS_COLORS[status],
-            }}
-          />
-          <span style={{ minWidth: 0 }}>{text.statusLabels[status]}</span>
+      <div className="panel-header">
+        <div className="panel-brand">
+          <div className="panel-brand-logo">
+            <Languages size={18} />
+          </div>
+          <div className="panel-brand-name">{uiText.appName}</div>
         </div>
         <button
           type="button"
-          style={{
-            ...secondaryButtonStyle,
-            minHeight: '34px',
-            padding: '0 10px',
-            borderRadius: '10px',
-            fontSize: '12px',
-          }}
+          className="btn-secondary"
+          style={{ minHeight: '34px', width: 'auto', padding: '0 12px', fontSize: '12px' }}
           onClick={onOpenSettings}
         >
+          <Settings size={14} />
           {text.settingsButton}
         </button>
       </div>
 
-      <div style={{ fontSize: '11px', color: '#91a0b3' }}>
-        {text.websocket}: {connectionState}
+      <div className="panel-status">
+        <span className={`status-dot ${STATUS_CLASS[status]}`} />
+        <span>{text.statusLabels[status]}</span>
       </div>
 
-      <label
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '92px minmax(0, 1fr)',
-          alignItems: 'center',
-          gap: '8px',
-          minHeight: '44px',
-          color: '#b9c5d3',
-          fontSize: '12px',
-        }}
-      >
-        <span>{text.source}</span>
+      <div className={`connection-label connection-${connectionState === 'connected' ? 'ok' : 'warn'}`}>
+        <WifiIcon />
+        <span>{text.websocket}: {connectionState}</span>
+        {connectionState !== 'connected' ? <span className="connection-hint">{text.connectionHint}</span> : null}
+      </div>
+
+      <div className="panel-group-title">
+        <Languages size={13} />
+        {text.groupLanguages}
+      </div>
+
+      <label className="field">
+        <span>
+          <Languages size={14} />
+          {text.source}
+        </span>
         <select
           value={languageConfig.sourceLanguage}
           aria-label={text.sourceAriaLabel}
-          style={{
-            minWidth: 0,
-            width: '100%',
-            minHeight: '38px',
-            padding: '0 10px',
-            borderRadius: '10px',
-            border: '1px solid rgba(255,255,255,0.14)',
-            background: 'rgba(255,255,255,0.06)',
-            color: '#e6edf6',
-            fontSize: '12px',
-            fontWeight: 600,
-          }}
           onChange={(event) => onSourceLanguageChange(parseSourceLanguage(event.currentTarget.value))}
         >
           {SOURCE_LANGUAGE_VALUES.map((value) => (
@@ -239,133 +249,269 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             </option>
           ))}
         </select>
+        {languageConfig.sourceLanguage === 'auto' && detectedSourceLanguage && (
+          <span className="field-hint detected-language-hint">
+            {text.detectedSource(detectedSourceLanguage)}
+          </span>
+        )}
       </label>
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: '8px',
+      <label className="field">
+        <span>
+          <Languages size={14} />
+          {text.target}
+        </span>
+        <select
+          value={languageConfig.targetLanguage}
+          aria-label={text.targetAriaLabel}
+          onChange={(event) => onTargetLanguageChange(parseTargetLanguage(event.currentTarget.value))}
+        >
+          {TARGET_LANGUAGE_VALUES.map((value) => (
+            <option key={value} value={value}>
+              {text.targetOptions[value]}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label className="field">
+        <span>
+          <Sparkles size={14} />
+          {text.translationStyle}
+        </span>
+        <select
+          value={translationStyle}
+          aria-label={text.translationStyleAriaLabel}
+          onChange={(event) => onTranslationStyleChange(parseTranslationStyle(event.currentTarget.value))}
+        >
+          {TRANSLATION_STYLE_VALUES.map((value) => (
+            <option key={value} value={value}>
+              {text.translationStyleOptions[value]}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label className="field field-checkbox">
+        <input
+          type="checkbox"
+          checked={asrHotwordsEnabled}
+          aria-label={text.asrHotwords}
+          onChange={(event) => onAsrHotwordsEnabledChange(event.currentTarget.checked)}
+        />
+        <span className="field-checkbox-label">
+          <BookMarked size={14} />
+          {text.asrHotwords}
+        </span>
+      </label>
+
+      <label className="field">
+        <span>
+          <Mic size={14} />
+          {text.audioSource}
+        </span>
+        <select
+          value={audioSource}
+          aria-label={text.audioSource}
+          onChange={(event) => {
+            const next = event.currentTarget.value as AudioSourceType
+            if (next === 'file') {
+              // 文件源：先弹出文件选择，选完后再切换源并加载。
+              audioFileInputRef.current?.click()
+              return
+            }
+            void onAudioSourceChange(next)
+          }}
+        >
+          {text.audioSourceOptions.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        {audioSource === 'file' && (
+          <span className={`field-hint ${audioFileEnded ? 'file-ended' : ''}`}>
+            {audioFileEnded
+              ? text.audioFileEnded
+              : audioFileName
+                ? text.audioFileLoaded
+                : fileLoadState === 'failed'
+                  ? text.audioFileLoadFailed
+                  : text.audioFilePick}
+          </span>
+        )}
+      </label>
+
+      <input
+        ref={audioFileInputRef}
+        type="file"
+        accept="audio/*,.wav,.mp3,.ogg,.flac,.m4a"
+        className="visually-hidden"
+        aria-label={text.audioFilePick}
+        onChange={(event) => {
+          const file = event.currentTarget.files?.[0]
+          event.currentTarget.value = ''
+          if (!file) {
+            return
+          }
+          const result = onAudioSourceChange('file', file)
+          Promise.resolve(result)
+            .then((ok) => {
+              setFileLoadState(ok ? 'ok' : 'failed')
+            })
+            .catch(() => setFileLoadState('failed'))
         }}
-      >
-        <div style={metricStyle}>
-          <div style={{ fontSize: '11px', color: '#91a0b3' }}>{text.translationFixes}</div>
-          <div style={{ fontSize: '18px', fontWeight: 700, color: '#ffffff' }}>
-            {translationRevisionCount}
+      />
+
+      <div className="metric-row">
+        <div className="metric-card">
+          <div className="metric-label">
+            <RefreshCw size={13} />
+            {text.translationFixes}
           </div>
+          <div className="metric-value">{translationRevisionCount}</div>
         </div>
-        <div style={metricStyle}>
-          <div style={{ fontSize: '11px', color: '#91a0b3' }}>{text.asrFixes}</div>
-          <div style={{ fontSize: '18px', fontWeight: 700, color: '#ffffff' }}>
-            {asrRevisionCount}
+        <div className="metric-card">
+          <div className="metric-label">
+            <Mic size={13} />
+            {text.asrFixes}
           </div>
+          <div className="metric-value">{asrRevisionCount}</div>
         </div>
       </div>
 
-      <div style={{ fontSize: '11px', color: '#91a0b3' }}>
-        {text.lastFix}: {lastRevisionReason ? text.revisionLabels[lastRevisionReason] : text.none}
+      <div className="connection-label">
+        <CircleCheck size={13} />
+        <span>{text.lastFix}: {lastRevisionReason ? text.revisionLabels[lastRevisionReason] : text.none}</span>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        <div style={buttonClipStyle}>
-          <button
-            type="button"
-            style={{
-              ...primaryButtonStyle,
-              width: '100%',
-              background: isActive ? '#d84b45' : '#29945b',
-            }}
-            onClick={isActive ? onStop : onStart}
-          >
-            {isActive ? text.stopTranslation : text.startTranslation}
-          </button>
-        </div>
+      <div className="panel-group-title">
+        <Play size={13} />
+        {text.groupActions}
+      </div>
 
-        <div style={buttonClipStyle}>
-          <button
-            type="button"
-            style={{
-              ...secondaryButtonStyle,
-              width: '100%',
-            }}
-            onClick={onManualRevise}
-          >
-            {text.reviseNow}
-          </button>
-        </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <button
+          type="button"
+          className={`btn-primary ${isActive ? 'stop' : 'start'}`}
+          onClick={isActive ? onStop : onStart}
+        >
+          {isActive ? <Pause size={18} /> : <Play size={18} />}
+          {isActive ? text.stopTranslation : text.startTranslation}
+        </button>
 
-        <div style={buttonClipStyle}>
-          <button
-            type="button"
-            style={{
-              ...secondaryButtonStyle,
-              width: '100%',
-            }}
-            onClick={onOpenHistory}
-          >
-            {text.historyAndExport(subtitleHistoryCount)}
-          </button>
-        </div>
+        <button type="button" className="btn-secondary" onClick={onManualRevise}>
+          <RefreshCw size={16} />
+          {text.reviseNow}
+        </button>
 
-        <div style={buttonClipStyle}>
-          <input
-            ref={glossaryInputRef}
-            type="file"
-            accept=".json,.csv"
-            style={{ display: 'none' }}
-            onChange={(event) => {
-              const file = event.target.files?.[0]
-              if (!file) {
-                return
-              }
-              const result = onGlossaryImport(file)
-              const resolved = result instanceof Promise ? result : Promise.resolve(result)
-              resolved
-                .then((success) => setGlossaryStatus(success ? 'ok' : 'failed'))
-                .catch(() => setGlossaryStatus('failed'))
-              event.target.value = ''
-              window.setTimeout(() => setGlossaryStatus('idle'), 2000)
-            }}
-          />
-          <button
-            type="button"
-            style={{
-              ...secondaryButtonStyle,
-              width: '100%',
-              color: glossaryStatus === 'failed' ? '#ff6b5e' : glossaryStatus === 'ok' ? '#58b06a' : '#d9e1eb',
-            }}
-            onClick={() => glossaryInputRef.current?.click()}
-          >
-            {glossaryStatus === 'failed'
-              ? text.glossaryImportFailed
-              : glossaryStatus === 'ok'
-                ? text.glossaryImported
-                : text.glossaryImport}
-          </button>
-        </div>
+        <button type="button" className="btn-secondary" onClick={onOpenHistory}>
+          <History size={16} />
+          {text.historyAndExport(subtitleHistoryCount)}
+        </button>
+
+        <button type="button" className="btn-secondary" onClick={onOpenTerminal}>
+          <TerminalSquare size={16} />
+          {text.openTerminal}
+        </button>
+
+        <button type="button" className="btn-secondary" onClick={onOpenSummary}>
+          <Sparkles size={16} />
+          {text.openSummary}
+        </button>
+
+        <button type="button" className="btn-secondary" onClick={onOpenGlossary}>
+          <BookOpenText size={16} />
+          {text.openGlossary}
+        </button>
+
+        <button type="button" className="btn-secondary" onClick={onOpenTranslationMemory}>
+          <BookMarked size={16} />
+          {text.openTranslationMemory}
+        </button>
+
+        <button type="button" className="btn-secondary" onClick={onOpenSubtitleStyle}>
+          <Palette size={16} />
+          {text.openSubtitleStyle}
+        </button>
+
+        <button type="button" className="btn-secondary" onClick={onOpenCollaboration}>
+          <Users size={16} />
+          {text.openCollaboration}
+        </button>
+
+        <button type="button" className="btn-secondary" onClick={onOpenSubscription}>
+          <Wallet size={16} />
+          {text.openSubscription}
+        </button>
+
+        <button type="button" className="btn-secondary" onClick={onOpenCost}>
+          <Coins size={16} />
+          {text.openCost}
+        </button>
+
+        <button type="button" className="btn-secondary" onClick={onOpenSessionHistory}>
+          <Database size={16} />
+          {text.openSessionHistory}
+        </button>
+
+        <button type="button" className="btn-secondary" onClick={onOpenRevisionTimeline}>
+          <TrendingUp size={16} />
+          {text.openRevisionTimeline}
+        </button>
+
+        <input
+          ref={glossaryInputRef}
+          type="file"
+          accept=".json,.csv"
+          style={{ display: 'none' }}
+          onChange={(event) => {
+            const file = event.target.files?.[0]
+            if (!file) {
+              return
+            }
+            const result = onGlossaryImport(file)
+            const resolved = result instanceof Promise ? result : Promise.resolve(result)
+            resolved
+              .then((success) => setGlossaryStatus(success ? 'ok' : 'failed'))
+              .catch(() => setGlossaryStatus('failed'))
+            event.target.value = ''
+            window.setTimeout(() => setGlossaryStatus('idle'), 2000)
+          }}
+        />
+        <button
+          type="button"
+          className="btn-secondary"
+          style={glossaryStatus === 'failed' ? { color: 'var(--red)' } : glossaryStatus === 'ok' ? { color: 'var(--green)' } : undefined}
+          onClick={() => glossaryInputRef.current?.click()}
+        >
+          {glossaryStatus === 'failed' ? (
+            <CircleX size={16} />
+          ) : glossaryStatus === 'ok' ? (
+            <CircleCheck size={16} />
+          ) : (
+            <FileUp size={16} />
+          )}
+          {glossaryStatus === 'failed'
+            ? text.glossaryImportFailed
+            : glossaryStatus === 'ok'
+              ? text.glossaryImported
+              : text.glossaryImport}
+        </button>
 
         {floatingSubtitles.available ? (
-          <div style={buttonClipStyle}>
-            <button
-              type="button"
-              aria-pressed={floatingSubtitles.visible}
-              style={{
-                ...secondaryButtonStyle,
-                width: '100%',
-                background: floatingSubtitles.visible
-                  ? 'rgba(74,163,255,0.18)'
-                  : 'rgba(255,255,255,0.04)',
-                borderColor: floatingSubtitles.visible
-                  ? 'rgba(74,163,255,0.4)'
-                  : 'rgba(255,255,255,0.1)',
-              }}
-              onClick={floatingSubtitles.onToggle}
-            >
-              {floatingSubtitles.visible
-                ? text.closeFloatingSubtitles
-                : text.openFloatingSubtitles}
-            </button>
-          </div>
+          <button
+            type="button"
+            aria-pressed={floatingSubtitles.visible}
+            className="btn-secondary"
+            style={floatingSubtitles.visible ? undefined : undefined}
+            onClick={floatingSubtitles.onToggle}
+          >
+            <BookOpenText size={16} />
+            {floatingSubtitles.visible
+              ? text.closeFloatingSubtitles
+              : text.openFloatingSubtitles}
+          </button>
         ) : null}
       </div>
 
@@ -373,33 +519,52 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         style={{
           display: 'flex',
           flexDirection: 'column',
-          gap: '8px',
-          padding: '10px',
-          borderRadius: '12px',
-          background: 'rgba(255,255,255,0.04)',
-          border: '1px solid rgba(255,255,255,0.07)',
+          gap: '10px',
+          padding: '12px',
+          borderRadius: '16px',
+          background: 'rgba(255,255,255,0.03)',
+          border: '1px solid var(--line)',
         }}
       >
-        <div style={buttonClipStyle}>
-          <button
-            type="button"
-            aria-pressed={ttsSettings.enabled}
+        <button
+          type="button"
+          aria-pressed={ttsSettings.enabled}
+          disabled={!canUseTts}
+          className="btn-secondary"
+          style={ttsSettings.enabled ? undefined : undefined}
+          onClick={() => onTtsEnabledChange(!ttsSettings.enabled)}
+        >
+          {ttsSettings.enabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
+          {canUseTts
+            ? (ttsSettings.enabled ? text.voiceOn : text.voiceOff)
+            : text.voiceUnavailable}
+        </button>
+
+        <label className="connection-label" style={{ gap: '6px' }}>
+          <Cpu size={13} />
+          <span>{text.voiceEngine}</span>
+          <select
+            aria-label={text.voiceEngine}
+            value={ttsEngine}
             disabled={!canUseTts}
+            onChange={(event) => onTtsEngineChange(event.target.value as TtsEngine)}
             style={{
-              ...secondaryButtonStyle,
-              width: '100%',
-              background: ttsSettings.enabled ? 'rgba(74,163,255,0.18)' : 'rgba(255,255,255,0.04)',
-              borderColor: ttsSettings.enabled ? 'rgba(74,163,255,0.4)' : 'rgba(255,255,255,0.1)',
-              color: canUseTts ? '#ffffff' : '#718093',
-              cursor: canUseTts ? 'pointer' : 'not-allowed',
+              flex: 1,
+              background: 'rgba(255,255,255,0.04)',
+              border: '1px solid var(--line)',
+              color: 'inherit',
+              borderRadius: '8px',
+              padding: '4px 8px',
+              fontSize: '12px',
             }}
-            onClick={() => onTtsEnabledChange(!ttsSettings.enabled)}
           >
-              {canUseTts
-                ? (ttsSettings.enabled ? text.voiceOn : text.voiceOff)
-                : text.voiceUnavailable}
-            </button>
-        </div>
+            {text.voiceEngineOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
 
         <VoiceSlider
           label={text.volume}
@@ -423,7 +588,8 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
           onChange={onTtsRateChange}
         />
 
-        <div style={{ color: '#91a0b3', fontSize: '11px' }}>
+        <div className="connection-label">
+          <Volume2 size={13} />
           {text.voiceStatus(
             ttsDiagnostics.isSpeaking ? text.voiceStates.speaking : text.voiceStates.idle,
             ttsDiagnostics.queueLength,
@@ -431,68 +597,34 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         </div>
       </div>
 
-      <div className="control-mode-group">
+      <div className="segmented">
         {text.modeOptions.map((option) => {
           const isSelected = option.value === subtitleMode
           return (
-            <div
+            <button
               key={option.value}
-              className="control-mode-option"
+              type="button"
+              aria-pressed={isSelected}
+              onClick={() => onSubtitleModeChange(option.value)}
             >
-              <button
-                type="button"
-                aria-pressed={isSelected}
-                style={{
-                  ...secondaryButtonStyle,
-                  width: '100%',
-                  minHeight: '44px',
-                  padding: '0 6px',
-                  fontSize: '12px',
-                  lineHeight: 1.12,
-                  overflowWrap: 'anywhere',
-                  background: isSelected ? 'rgba(74,163,255,0.18)' : 'rgba(255,255,255,0.03)',
-                  borderColor: isSelected ? 'rgba(74,163,255,0.4)' : 'rgba(255,255,255,0.1)',
-                  color: isSelected ? '#ffffff' : '#b9c5d3',
-                }}
-                onClick={() => onSubtitleModeChange(option.value)}
-              >
-                {option.label}
-              </button>
-            </div>
+              {option.label}
+            </button>
           )
         })}
       </div>
 
-      <div style={buttonClipStyle}>
-        <button
-          type="button"
-          style={{
-            ...secondaryButtonStyle,
-            width: '100%',
-            minHeight: '44px',
-            fontSize: '12px',
-          }}
-          onClick={() => setShowDetails((value) => !value)}
-        >
-          {showDetails ? text.hideDetails : text.showDetails}
-        </button>
-      </div>
+      <button
+        type="button"
+        className="btn-secondary"
+        style={{ minHeight: '40px', fontSize: '12px' }}
+        onClick={() => setShowDetails((value) => !value)}
+      >
+        {showDetails ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+        {showDetails ? text.hideDetails : text.showDetails}
+      </button>
 
       {showDetails ? (
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'stretch',
-            gap: '6px',
-            padding: '10px 12px',
-            borderRadius: '12px',
-            background: 'rgba(255,255,255,0.04)',
-            fontSize: '12px',
-            lineHeight: 1.42,
-            color: '#b9c5d3',
-          }}
-        >
+        <div className="detail-panel">
           <DetailRow label={text.details.session} value={serverDiagnostics?.session_id ?? clientDiagnostics.sessionId} />
           <DetailRow label={text.details.capture} value={formatCaptureBackend(clientDiagnostics.captureBackend, text)} />
           <DetailRow label={text.details.voice} value={formatVoiceStatus(ttsDiagnostics, text)} />
@@ -556,11 +688,11 @@ const VoiceSlider: React.FC<VoiceSliderProps> = ({
   <label
     style={{
       display: 'grid',
-      gridTemplateColumns: '68px minmax(0, 1fr) 48px',
+      gridTemplateColumns: '60px minmax(0, 1fr) 48px',
       alignItems: 'center',
       gap: '8px',
-      minHeight: '44px',
-      color: disabled ? '#718093' : '#b9c5d3',
+      minHeight: '40px',
+      color: disabled ? 'var(--text-3)' : 'var(--text-1)',
       fontSize: '12px',
     }}
   >
@@ -574,28 +706,31 @@ const VoiceSlider: React.FC<VoiceSliderProps> = ({
       disabled={disabled}
       style={{
         width: '100%',
-        accentColor: '#4aa3ff',
+        accentColor: 'var(--accent)',
         cursor: disabled ? 'not-allowed' : 'pointer',
       }}
       onChange={(event) => onChange(Number(event.currentTarget.value))}
     />
-    <span style={{ textAlign: 'right' }}>{displayValue}</span>
+    <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{displayValue}</span>
   </label>
 )
 
 
 const DetailRow: React.FC<DetailRowProps> = ({ label, value }) => (
-  <div
-    style={{
-      display: 'grid',
-      gridTemplateColumns: 'minmax(86px, 0.8fr) minmax(0, 1.2fr)',
-      gap: '8px',
-      minWidth: 0,
-    }}
-  >
-    <span style={{ color: '#7f8ea3' }}>{label}</span>
-    <span style={{ color: '#d9e1eb', wordBreak: 'break-word' }}>{value || '-'}</span>
+  <div className="detail-row">
+    <span className="d-label">{label}</span>
+    <span className="d-value">{value || '-'}</span>
   </div>
+)
+
+
+const WifiIcon: React.FC = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M5 12.55a11 11 0 0 1 14.08 0" />
+    <path d="M1.42 9a16 16 0 0 1 21.16 0" />
+    <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
+    <line x1="12" x2="12.01" y1="20" y2="20" />
+  </svg>
 )
 
 
@@ -649,6 +784,18 @@ function formatCounterMap(values: Record<string, number> | undefined): string {
 function parseSourceLanguage(value: string): SourceLanguage {
   const option = SOURCE_LANGUAGE_VALUES.find((item) => item === value)
   return option ?? 'en'
+}
+
+
+function parseTargetLanguage(value: string): TargetLanguage {
+  const option = TARGET_LANGUAGE_VALUES.find((item) => item === value)
+  return option ?? 'zh-CN'
+}
+
+
+function parseTranslationStyle(value: string): TranslationStyle {
+  const option = TRANSLATION_STYLE_VALUES.find((item) => item === value)
+  return option ?? 'concise'
 }
 
 

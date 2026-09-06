@@ -1,3 +1,5 @@
 export { ControlPanel } from './ControlPanel'
 export { SettingsPanel } from './SettingsPanel'
 export { SubtitleHistoryPanel } from './SubtitleHistoryPanel'
+export { RevisionTimelinePanel } from './RevisionTimelinePanel'
+export { CostPanel } from './CostPanel'

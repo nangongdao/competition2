@@ -7,10 +7,11 @@ only key presence flags and never raw secret values.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 import os
 from pathlib import Path
+import re
 import stat
 
 from loguru import logger
@@ -25,7 +26,8 @@ EXAMPLE_SETTINGS_PATH = CONFIG_DIR / "desktop-settings.example.json"
 SUPPORTED_UI_LANGUAGES = {"zh-CN", "en-US"}
 SUPPORTED_TRANSLATION_ENGINES = {"openai", "claude"}
 SUPPORTED_ASR_PROFILES = {"remote", "light", "cpu", "gpu", "env"}
-SUPPORTED_SOURCE_LANGUAGES = {"auto", "en", "ja", "ko", "es", "fr", "de"}
+SUPPORTED_SOURCE_LANGUAGES = {"auto", "en", "zh-CN", "ja", "ko", "es", "fr", "de"}
+SUPPORTED_TARGET_LANGUAGES = {"zh-CN", "en", "ja", "ko", "es", "fr", "de"}
 
 
 @dataclass(frozen=True)
@@ -48,6 +50,31 @@ class LocalAsrSettings:
 class LocalRuntimeSettings:
     asr_profile: str
     source_language: str
+    target_language: str
+
+
+@dataclass(frozen=True)
+class LocalSubtitleStyleSettings:
+    font_size: int
+    font_color: str
+    background_color: str
+    background_opacity: float
+    position: str
+
+
+SUB_SUBTITLE_POSITIONS = {"bottom", "middle", "top"}
+SUBTITLE_FONT_SIZE_MIN = 12
+SUBTITLE_FONT_SIZE_MAX = 36
+
+
+def create_default_subtitle_style() -> LocalSubtitleStyleSettings:
+    return LocalSubtitleStyleSettings(
+        font_size=22,
+        font_color="#ffffff",
+        background_color="#0a0e16",
+        background_opacity=0.78,
+        position="bottom",
+    )
 
 
 @dataclass(frozen=True)
@@ -56,6 +83,7 @@ class LocalSettings:
     translation: LocalTranslationSettings
     asr: LocalAsrSettings
     runtime: LocalRuntimeSettings
+    subtitle_style: LocalSubtitleStyleSettings = field(default_factory=create_default_subtitle_style)
 
 
 def create_default_local_settings() -> LocalSettings:
@@ -76,7 +104,9 @@ def create_default_local_settings() -> LocalSettings:
         runtime=LocalRuntimeSettings(
             asr_profile="remote",
             source_language="en",
+            target_language="zh-CN",
         ),
+        subtitle_style=create_default_subtitle_style(),
     )
 
 
@@ -114,6 +144,7 @@ def normalize_local_settings(
     raw_translation = as_mapping(raw.get("translation"))
     raw_asr = as_mapping(raw.get("asr"))
     raw_runtime = as_mapping(raw.get("runtime"))
+    raw_subtitle_style = as_mapping(raw.get("subtitleStyle"))
 
     return LocalSettings(
         ui_language=pick_allowed(
@@ -163,6 +194,46 @@ def normalize_local_settings(
                 SUPPORTED_SOURCE_LANGUAGES,
                 base.runtime.source_language,
             ),
+            target_language=pick_allowed(
+                raw_runtime.get("targetLanguage"),
+                SUPPORTED_TARGET_LANGUAGES,
+                base.runtime.target_language,
+            ),
+        ),
+        subtitle_style=normalize_subtitle_style_settings(
+            raw_subtitle_style,
+            base.subtitle_style,
+        ),
+    )
+
+
+def normalize_subtitle_style_settings(
+    raw_style: Mapping[object, object],
+    fallback: LocalSubtitleStyleSettings | None = None,
+) -> LocalSubtitleStyleSettings:
+    base = fallback or create_default_subtitle_style()
+    return LocalSubtitleStyleSettings(
+        font_size=clamp_int(
+            raw_style.get("fontSize"),
+            SUBTITLE_FONT_SIZE_MIN,
+            SUBTITLE_FONT_SIZE_MAX,
+            base.font_size,
+        ),
+        font_color=pick_hex_color(raw_style.get("fontColor"), base.font_color),
+        background_color=pick_hex_color(
+            raw_style.get("backgroundColor"),
+            base.background_color,
+        ),
+        background_opacity=clamp_float(
+            raw_style.get("backgroundOpacity"),
+            0.0,
+            1.0,
+            base.background_opacity,
+        ),
+        position=pick_allowed(
+            raw_style.get("position"),
+            SUB_SUBTITLE_POSITIONS,
+            base.position,
         ),
     )
 
@@ -192,7 +263,9 @@ def merge_local_settings_update(
             "runtime": {
                 "asrProfile": raw_runtime.get("asrProfile"),
                 "sourceLanguage": raw_runtime.get("sourceLanguage"),
+                "targetLanguage": raw_runtime.get("targetLanguage"),
             },
+            "subtitleStyle": as_mapping(raw_update.get("subtitleStyle")),
         },
         current_settings,
     )
@@ -224,6 +297,7 @@ def merge_local_settings_update(
             ),
         ),
         runtime=normalized.runtime,
+        subtitle_style=normalized.subtitle_style,
     )
 
 
@@ -290,6 +364,14 @@ def create_settings_snapshot(
         "runtime": {
             "asrProfile": settings.runtime.asr_profile,
             "sourceLanguage": settings.runtime.source_language,
+            "targetLanguage": settings.runtime.target_language,
+        },
+        "subtitleStyle": {
+            "fontSize": settings.subtitle_style.font_size,
+            "fontColor": settings.subtitle_style.font_color,
+            "backgroundColor": settings.subtitle_style.background_color,
+            "backgroundOpacity": settings.subtitle_style.background_opacity,
+            "position": settings.subtitle_style.position,
         },
     }
 
@@ -312,6 +394,14 @@ def create_settings_file_payload(settings: LocalSettings) -> dict[str, object]:
         "runtime": {
             "asrProfile": settings.runtime.asr_profile,
             "sourceLanguage": settings.runtime.source_language,
+            "targetLanguage": settings.runtime.target_language,
+        },
+        "subtitleStyle": {
+            "fontSize": settings.subtitle_style.font_size,
+            "fontColor": settings.subtitle_style.font_color,
+            "backgroundColor": settings.subtitle_style.background_color,
+            "backgroundOpacity": settings.subtitle_style.background_opacity,
+            "position": settings.subtitle_style.position,
         },
     }
 
@@ -342,6 +432,28 @@ def pick_string(value: object, fallback: str) -> str:
 
     trimmed = value.strip()
     return trimmed if trimmed else fallback
+
+
+_HEX_COLOR_PATTERN = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def pick_hex_color(value: object, fallback: str) -> str:
+    if not isinstance(value, str):
+        return fallback
+    trimmed = value.strip()
+    return trimmed if _HEX_COLOR_PATTERN.match(trimmed) else fallback
+
+
+def clamp_int(value: object, min_value: int, max_value: int, fallback: int) -> int:
+    if not isinstance(value, bool) and isinstance(value, int):
+        return max(min_value, min(max_value, value))
+    return fallback
+
+
+def clamp_float(value: object, min_value: float, max_value: float, fallback: float) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return fallback
+    return max(min_value, min(max_value, float(value)))
 
 
 def as_mapping(value: object) -> Mapping[object, object]:

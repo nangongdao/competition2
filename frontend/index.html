@@ -6,14 +6,25 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'self';
                script-src 'self';
-               style-src 'self' 'unsafe-inline';
+               style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+               font-src 'self' data: https://fonts.gstatic.com;
                img-src 'self' data: blob:;
                media-src 'self' blob:;
-               connect-src 'self' ws://127.0.0.1:8000 http://127.0.0.1:8000;
+               connect-src 'self' ws://127.0.0.1:8000 http://127.0.0.1:8000 ws://localhost:8000 http://localhost:8000;
+               worker-src 'self' blob:;
                frame-ancestors 'none';"
     />
     <link rel="icon" type="image/svg+xml" href="/app-icon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#05070d" />
+    <meta name="description" content="AI 同声传译助手 — 实时外语音频流翻译成中文字幕/语音的桌面应用" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
     <title>AI Interpreter</title>
   </head>
   <body>

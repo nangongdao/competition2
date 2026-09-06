@@ -46,6 +46,7 @@ export class TtsPlayer {
   private _queue: QueuedUtterance[] = []
   private _spokenKeys: Set<string> = new Set()
   private _segmentNextIndex: Map<string, number> = new Map()
+  private _replayCounter: Map<string, number> = new Map()
   private _speakingKey: string | null = null
 
   constructor() {
@@ -165,10 +166,34 @@ export class TtsPlayer {
     this._enqueue(segmentId, `${segmentId}:${index}`, text)
   }
 
+  /**
+   * 回看/重读指定片段译文（或原文），供字幕时间轴回看跳转使用。
+   *
+   * 复用现有排队/去重机制，但使用独立的 "replay" 序号，确保同一片段可被
+   * 多次重读而不被流式去重抑制。
+   *
+   * @param segmentId 片段 ID。
+   * @param text 要重读的文本（译文或原文）。
+   */
+  replaySegment(segmentId: string, text: string): void {
+    if (!this._settings.enabled) {
+      return
+    }
+    const normalizedText = normalizeSpeechText(text)
+    if (!normalizedText) {
+      this._skip('blank')
+      return
+    }
+    const counter = this._replayCounter.get(segmentId) ?? 0
+    this._replayCounter.set(segmentId, counter + 1)
+    this._enqueue(segmentId, `${segmentId}:replay:${counter}`, normalizedText)
+  }
+
   reset(): void {
     this.cancelQueue()
     this._spokenKeys = new Set()
     this._segmentNextIndex = new Map()
+    this._replayCounter = new Map()
     this._diagnostics = {
       ...DEFAULT_TTS_DIAGNOSTICS,
       isSupported: this._isSupported,

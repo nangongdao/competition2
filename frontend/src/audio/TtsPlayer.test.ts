@@ -194,6 +194,37 @@ describe('TtsPlayer', () => {
     speech.finishSpokenAt(0)
     assert.equal(speech.spoken[1]?.text, '乙。')
   })
+
+  it('replays a segment that was already spoken (rewind/re-read)', () => {
+    const speech = installSpeechMocks()
+    const player = new TtsPlayer()
+
+    player.setEnabled(true)
+    player.speakStreamSentence('seg-1', '第一次。', 0)
+    speech.finishSpokenAt(0)
+    assert.equal(player.diagnostics.spokenUtterances, 1)
+
+    // 已朗读过的片段可被回看重读，不受流式去重抑制。
+    player.replaySegment('seg-1', '回看重读。')
+    assert.equal(speech.spoken.length, 2)
+    assert.equal(speech.spoken[1]?.text, '回看重读。')
+
+    // 可重复重读同一片段。
+    speech.finishSpokenAt(1)
+    player.replaySegment('seg-1', '再次重读。')
+    assert.equal(speech.spoken.length, 3)
+    assert.equal(speech.spoken[2]?.text, '再次重读。')
+  })
+
+  it('ignores replay when voice is disabled', () => {
+    installSpeechMocks()
+    const player = new TtsPlayer()
+    player.setEnabled(false)
+
+    player.replaySegment('seg-1', '不应播放。')
+    assert.equal(player.diagnostics.spokenUtterances, 0)
+    assert.equal(player.diagnostics.queueLength, 0)
+  })
 })
 
 

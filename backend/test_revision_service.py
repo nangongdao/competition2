@@ -222,5 +222,149 @@ class RevisionServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(nmt.translation_calls, 0)
 
 
+class RevisionLoopGuardTests(unittest.IsolatedAsyncioTestCase):
+    """阶段 4：防止过度修正与循环修正。"""
+
+    def _build_context(self) -> tuple[RevisionService, ContextWindow, Segment]:
+        service = RevisionService()
+        context = ContextWindow(session_id="loop", window_size=10)
+        seg_a = Segment(
+            id="loop_0",
+            text_asr="first sentence",
+            confidence=0.95,
+            text_translated="first old translation",
+        )
+        seg_b = Segment(
+            id="loop_1",
+            text_asr="second sentence",
+            confidence=0.95,
+            text_translated="second old translation",
+        )
+        seg_c = Segment(
+            id="loop_2",
+            text_asr="current",
+            confidence=0.95,
+            text_translated="current",
+        )
+        context.add_segment(seg_a)
+        context.add_segment(seg_b)
+        context.add_segment(seg_c)
+        return service, context, seg_c
+
+    async def test_per_segment_max_prevents_oscillation(self) -> None:
+        """同一片段修正次数达到上限后不再继续修正（防震荡）。"""
+        from core.config import settings
+
+        original_max = settings.revision_max_per_segment
+        settings.revision_max_per_segment = 1
+        try:
+            service, context, trigger = self._build_context()
+            nmt = FakeNMTService("completely different translation")
+
+            # 第一次修正：允许
+            first = await service.check_and_revise(
+                context, nmt, force=True, trigger_segment=trigger, trigger="manual",
+            )
+            self.assertGreater(len(first), 0)
+
+            # 第二次触发（同一批片段）：片段已修正过 1 次达到上限，全部跳过
+            second = await service.check_and_revise(
+                context, nmt, force=True, trigger_segment=trigger, trigger="manual",
+            )
+            self.assertEqual(len(second), 0)
+
+            skipped = service.consume_skipped_counts()
+            self.assertGreaterEqual(skipped.get("max_per_segment", 0), 1)
+        finally:
+            settings.revision_max_per_segment = original_max
+
+    async def test_min_interval_throttles_rapid_revisions(self) -> None:
+        """同一片段在最小间隔内不会再次被修正（时间节流）。"""
+        from core.config import settings
+
+        original_max = settings.revision_max_per_segment
+        original_interval = settings.revision_min_interval_seconds
+        settings.revision_max_per_segment = 3
+        settings.revision_min_interval_seconds = 3600  # 1 小时，确保触发节流
+        try:
+            service, context, trigger = self._build_context()
+            nmt = FakeNMTService("completely different translation")
+
+            first = await service.check_and_revise(
+                context, nmt, force=True, trigger_segment=trigger, trigger="manual",
+            )
+            self.assertGreater(len(first), 0)
+
+            # 立即再触发：同一片段距上次修正 < 最小间隔，全部跳过
+            second = await service.check_and_revise(
+                context, nmt, force=True, trigger_segment=trigger, trigger="manual",
+            )
+            self.assertEqual(len(second), 0)
+        finally:
+            settings.revision_max_per_segment = original_max
+            settings.revision_min_interval_seconds = original_interval
+
+    async def test_asr_correction_respects_per_segment_guard(self) -> None:
+        """ASR 纠错同样受片段级修正次数上限约束。"""
+        from core.config import settings
+
+        original_max = settings.revision_max_per_segment
+        settings.revision_max_per_segment = 1
+        try:
+            service = RevisionService()
+            context = ContextWindow(session_id="asr-loop", window_size=10)
+            segment = Segment(
+                id="asr-loop_0",
+                text_asr="grain sand",
+                confidence=-1.2,
+                text_translated="wrong translation",
+            )
+            context.add_segment(segment)
+            nmt = FakeNMTService("corrected translation", completion="great sentence")
+            asr = FakeASRService()
+
+            first = await service.check_asr_correction(
+                segment, context, nmt, asr, audio_chunk=b"cached",
+            )
+            self.assertIsNotNone(first)
+
+            # 片段已修正 1 次达到上限，第二次直接跳过（不消耗上游调用）
+            nmt2 = FakeNMTService("corrected translation", completion="great sentence")
+            asr2 = FakeASRService()
+            second = await service.check_asr_correction(
+                segment, context, nmt2, asr2, audio_chunk=b"cached",
+            )
+            self.assertIsNone(second)
+            self.assertEqual(asr2.redecode_calls, 0)
+            self.assertEqual(nmt2.completion_calls, 0)
+        finally:
+            settings.revision_max_per_segment = original_max
+
+    async def test_total_revision_cap(self) -> None:
+        """会话总修正次数达到上限后停止一切修正（防 API 成本失控）。"""
+        from core.config import settings
+
+        original_total = settings.revision_max_total
+        settings.revision_max_total = 1
+        try:
+            service, context, trigger = self._build_context()
+            nmt = FakeNMTService("completely different translation")
+
+            first = await service.check_and_revise(
+                context, nmt, force=True, trigger_segment=trigger, trigger="manual",
+            )
+            self.assertGreater(len(first), 0)
+
+            second = await service.check_and_revise(
+                context, nmt, force=True, trigger_segment=trigger, trigger="manual",
+            )
+            self.assertEqual(len(second), 0)
+
+            skipped = service.consume_skipped_counts()
+            self.assertGreaterEqual(skipped.get("max_total", 0), 1)
+        finally:
+            settings.revision_max_total = original_total
+
+
 if __name__ == "__main__":
     unittest.main()

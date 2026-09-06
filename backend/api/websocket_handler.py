@@ -15,6 +15,7 @@ from services.asr_service import ASRService
 from services.context_manager import ContextManager
 from services.nmt_service import NMTService
 from services.revision_service import RevisionService
+from services.tts_service import TTSService
 
 
 class ChunkRateLimiter:
@@ -52,6 +53,7 @@ class WebSocketHandler:
         self._asr: Optional[ASRService] = None
         self._nmt: Optional[NMTService] = None
         self._ctx_manager: Optional[ContextManager] = None
+        self._tts: Optional[TTSService] = None
         self._active_pipelines: dict[str, Pipeline] = {}
         self._reconnect_tokens: dict[str, str] = {}
 
@@ -59,12 +61,57 @@ class WebSocketHandler:
         self._asr = ASRService()
         self._nmt = NMTService()
         self._ctx_manager = ContextManager()
+        self._tts = TTSService()
 
         await self._asr.initialize()
         await self._nmt.initialize()
         await self._ctx_manager.initialize()
+        await self._tts.initialize()
 
         logger.info("WebSocket handler initialized")
+
+    @property
+    def nmt_service(self) -> NMTService | None:
+        """当前 NMT 服务实例（供摘要服务复用 LLM 客户端）。"""
+        return self._nmt
+
+    @property
+    def ctx_manager(self) -> ContextManager | None:
+        """当前上下文管理器实例。"""
+        return self._ctx_manager
+
+    def translation_memory_summary(self) -> dict[str, object]:
+        """聚合所有活跃会话的翻译记忆库统计（V5.3 REST 端点用）。
+
+        Returns:
+            形如 {size, hits, misses, written, sessions} 的汇总统计。
+        """
+        total = {"size": 0, "hits": 0, "misses": 0, "written": 0}
+        sessions: list[str] = []
+        for session_id, pipeline in self._active_pipelines.items():
+            stats = pipeline.translation_memory_stats()
+            if stats is None:
+                continue
+            for key in total:
+                total[key] += int(stats.get(key, 0))
+            sessions.append(session_id)
+        return {
+            **total,
+            "sessions": sessions,
+            "threshold": settings.translation_memory_threshold,
+        }
+
+    def clear_translation_memory(self) -> int:
+        """清空所有活跃会话的翻译记忆库。
+
+        Returns:
+            被清空的会话数。
+        """
+        cleared = 0
+        for pipeline in self._active_pipelines.values():
+            if pipeline.clear_translation_memory():
+                cleared += 1
+        return cleared
 
     def has_active_pipeline(self, session_id: str) -> bool:
         """返回会话当前是否已有活跃管线。
@@ -72,6 +119,27 @@ class WebSocketHandler:
         用于重连鉴权：会话已存在时，重连必须携带有效令牌。
         """
         return session_id in self._active_pipelines
+
+    async def get_session_window(self, session_id: str):
+        """读取会话上下文窗口（供 REST 摘要端点使用）。
+
+        会话片段由管线实时写入 Redis，这里直接读取持久化窗口；
+        会话不存在或已过期（TTL 到）时返回 None。
+
+        Args:
+            session_id: 会话标识。
+
+        Returns:
+            会话上下文窗口；会话不存在或已过期时返回 None。
+        """
+        if self._ctx_manager is None:
+            return None
+        try:
+            window = await self._ctx_manager.get_window(session_id)
+        except Exception as exc:
+            logger.warning("Failed to read persisted session window {}: {}", session_id, exc)
+            return None
+        return window if window.get_all() else None
 
     def issue_reconnect_token(self, session_id: str) -> str:
         """为会话签发重连令牌，随 SESSION_STARTED 消息下发给客户端。
@@ -99,7 +167,7 @@ class WebSocketHandler:
         await ws.accept()
         logger.info("WebSocket connected: {}", session_id)
 
-        if not self._asr or not self._nmt or not self._ctx_manager:
+        if not self._asr or not self._nmt or not self._ctx_manager or not self._tts:
             await ws.send_json({
                 "type": "error",
                 "code": "SERVICE_NOT_READY",
@@ -120,9 +188,11 @@ class WebSocketHandler:
             nmt=self._nmt,
             ctx_manager=self._ctx_manager,
             revision=RevisionService(),
+            tts=self._tts,
             reconnect_token=reconnect_token,
         )
         pipeline.set_on_message(lambda msg: self._send_message(ws, msg))
+        pipeline.set_on_message_bytes(lambda data: self._send_bytes(ws, data))
         await pipeline.start()
         self._active_pipelines[session_id] = pipeline
 
@@ -209,12 +279,20 @@ class WebSocketHandler:
         if msg_type == "config":
             language = msg.get("language")
             target = msg.get("target_language")
-            await pipeline.update_config(language=language, target_language=target)
+            style_preset = msg.get("style_preset")
+            asr_hotwords_enabled = msg.get("asr_hotwords_enabled")
+            await pipeline.update_config(
+                language=language,
+                target_language=target,
+                style_preset=style_preset,
+                asr_hotwords_enabled=asr_hotwords_enabled,
+            )
             logger.info(
-                "Config updated for {}: {} -> {}",
+                "Config updated for {}: {} -> {} (style={})",
                 pipeline.session_id,
                 pipeline.language_config.source_language,
                 pipeline.language_config.target_language,
+                pipeline.nmt_style_preset,
             )
             return
 
@@ -248,6 +326,21 @@ class WebSocketHandler:
         except Exception as exc:
             logger.error("Failed to send message: {}", exc)
 
+    async def _send_bytes(self, ws: WebSocket, payload: bytes) -> None:
+        try:
+            await ws.send_bytes(payload)
+        except Exception as exc:
+            logger.error("Failed to send bytes: {}", exc)
+
+    def get_tts_stats(self) -> dict[str, object]:
+        """汇总当前共享 TTS 服务的合成与缓存统计（供 REST 端点与前端面板）。"""
+        if self._tts is None:
+            return {"enabled": False, "engine": "off", "active": 0}
+        return {
+            "active": len(self._active_pipelines),
+            **self._tts.diagnostics,
+        }
+
     async def shutdown(self) -> None:
         for session_id, pipeline in list(self._active_pipelines.items()):
             await pipeline.stop()
@@ -259,5 +352,7 @@ class WebSocketHandler:
             await self._nmt.shutdown()
         if self._ctx_manager:
             await self._ctx_manager.shutdown()
+        if self._tts:
+            await self._tts.shutdown()
 
         logger.info("WebSocket handler shut down")

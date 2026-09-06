@@ -67,4 +67,91 @@ describe('SubtitleStore 乱序保护', () => {
       ['speaker_1', 'speaker_2'],
     )
   })
+
+  it('restoreHistory 批量恢复导入的字幕并清空旧历史', () => {
+    const store = new SubtitleStore()
+    store.appendToken('old_0', '旧字幕')
+    store.finalizeSubtitle('old_0')
+
+    store.restoreHistory([
+      {
+        segmentId: 'import_0',
+        sourceText: 'Hello',
+        translatedText: '你好',
+        isPartial: false,
+        isRevised: false,
+        timestamp: 1000,
+        seq: 0,
+      },
+      {
+        segmentId: 'import_1',
+        sourceText: 'Bye',
+        translatedText: '再见',
+        isPartial: false,
+        isRevised: true,
+        revisionReason: 'translation_correction',
+        timestamp: 2000,
+        seq: 1,
+        speaker: 'speaker_1',
+      },
+    ])
+
+    // 旧历史被清空，只保留导入的条目，且按 seq 有序
+    assert.deepEqual(
+      store.history.map((entry) => entry.segmentId),
+      ['import_0', 'import_1'],
+    )
+    assert.equal(store.history[0].sourceText, 'Hello')
+    assert.equal(store.history[1].isRevised, true)
+    assert.equal(store.history[1].revisionReason, 'translation_correction')
+    assert.equal(store.history[1].speaker, 'speaker_1')
+    assert.equal(store.history[1].isPartial, false)
+  })
+})
+
+
+describe('SubtitleStore 单一数据流（第二梯队-方向 3）', () => {
+  it('getSnapshot 返回不可变可见/历史快照', () => {
+    const store = new SubtitleStore()
+    store.upsertSource('session-abc_0', 'Hello', 1000, 0)
+    store.appendToken('session-abc_0', ' 你好', 0)
+
+    const snapshot = store.getSnapshot()
+    assert.equal(snapshot.visible.length, 1)
+    assert.equal(snapshot.history.length, 1)
+    assert.equal(snapshot.visible[0].sourceText, 'Hello')
+
+    // 返回的是副本，外部修改不影响内部状态。
+    snapshot.visible[0].sourceText = 'Mutated'
+    assert.equal(store.getSnapshot().visible[0].sourceText, 'Hello')
+  })
+
+  it('订阅会在任何数据变更时触发', () => {
+    const store = new SubtitleStore()
+    let notified = 0
+    store.subscribe(() => {
+      notified += 1
+    })
+
+    store.upsertSource('session-abc_0', 'Hello', 1000, 0)
+    assert.equal(notified, 1)
+
+    store.appendToken('session-abc_0', ' 世界', 0)
+    assert.ok(notified >= 2)
+  })
+
+  it('订阅返回取消函数', () => {
+    const store = new SubtitleStore()
+    let notified = 0
+    const unsubscribe = store.subscribe(() => {
+      notified += 1
+    })
+
+    store.appendToken('session-abc_0', 'x', 0)
+    const afterSubscribe = notified
+
+    unsubscribe()
+    store.appendToken('session-abc_0', 'y', 0)
+    assert.equal(notified, afterSubscribe)
+  })
 })

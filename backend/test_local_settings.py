@@ -16,6 +16,7 @@ from services.local_settings import (
     LocalAsrSettings,
     LocalRuntimeSettings,
     LocalSettings,
+    LocalSubtitleStyleSettings,
     LocalTranslationSettings,
     create_default_local_settings,
     create_settings_file_payload,
@@ -50,6 +51,7 @@ class LocalSettingsTests(unittest.TestCase):
             runtime=LocalRuntimeSettings(
                 asr_profile="light",
                 source_language="ja",
+                target_language="zh-CN",
             ),
         )
 
@@ -85,6 +87,7 @@ class LocalSettingsTests(unittest.TestCase):
             runtime=LocalRuntimeSettings(
                 asr_profile="light",
                 source_language="en",
+                target_language="zh-CN",
             ),
         )
 
@@ -129,6 +132,7 @@ class LocalSettingsTests(unittest.TestCase):
             runtime=LocalRuntimeSettings(
                 asr_profile="light",
                 source_language="en",
+                target_language="zh-CN",
             ),
         )
 
@@ -170,7 +174,8 @@ class LocalSettingsTests(unittest.TestCase):
   },
   "runtime": {
     "asrProfile": "light",
-    "sourceLanguage": "en"
+    "sourceLanguage": "en",
+    "targetLanguage": "zh-CN"
   }
 }
 """,
@@ -194,6 +199,7 @@ class LocalSettingsTests(unittest.TestCase):
                     "runtime": {
                         "asrProfile": "env",
                         "sourceLanguage": "fr",
+                        "targetLanguage": "en",
                     },
                 },
                 local_path,
@@ -219,7 +225,96 @@ class LocalSettingsTests(unittest.TestCase):
         )
         self.assertEqual(
             create_settings_file_payload(persisted)["runtime"],
-            {"asrProfile": "env", "sourceLanguage": "fr"},
+            {"asrProfile": "env", "sourceLanguage": "fr", "targetLanguage": "en"},
+        )
+
+    def test_snapshot_exposes_subtitle_style_config(self) -> None:
+        settings = LocalSettings(
+            ui_language="zh-CN",
+            translation=LocalTranslationSettings(
+                engine="openai",
+                model="gpt-4o-mini",
+                openai_base_url="https://api.openai.com/v1",
+                openai_api_key="",
+                anthropic_api_key="",
+            ),
+            asr=LocalAsrSettings(
+                model="whisper-1",
+                openai_base_url="https://api.openai.com/v1",
+                openai_api_key="",
+            ),
+            runtime=LocalRuntimeSettings(
+                asr_profile="remote",
+                source_language="en",
+                target_language="zh-CN",
+            ),
+            subtitle_style=LocalSubtitleStyleSettings(
+                font_size=30,
+                font_color="#f0f0f0",
+                background_color="#0b0f1a",
+                background_opacity=0.82,
+                position="top",
+            ),
+        )
+
+        snapshot = create_settings_snapshot(settings, Path("local.json"))
+        subtitle_style = snapshot["subtitleStyle"]
+        self.assertIsInstance(subtitle_style, dict)
+        self.assertEqual(subtitle_style["fontSize"], 30)
+        self.assertEqual(subtitle_style["fontColor"], "#f0f0f0")
+        self.assertEqual(subtitle_style["backgroundColor"], "#0b0f1a")
+        self.assertEqual(subtitle_style["backgroundOpacity"], 0.82)
+        self.assertEqual(subtitle_style["position"], "top")
+
+    def test_merge_subtitle_style_clamps_and_validates_values(self) -> None:
+        current = create_default_local_settings()
+        settings = merge_local_settings_update(
+            {
+                "subtitleStyle": {
+                    "fontSize": 999,
+                    "fontColor": "not-a-color",
+                    "backgroundColor": "#112233",
+                    "backgroundOpacity": -0.5,
+                    "position": "middle",
+                }
+            },
+            current,
+        )
+
+        self.assertEqual(settings.subtitle_style.font_size, 36)
+        self.assertEqual(settings.subtitle_style.font_color, "#ffffff")
+        self.assertEqual(settings.subtitle_style.background_color, "#112233")
+        self.assertEqual(settings.subtitle_style.background_opacity, 0.0)
+        self.assertEqual(settings.subtitle_style.position, "middle")
+
+    def test_subtitle_style_defaults_persist_through_file_round_trip(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            local_path = Path(temp_dir) / "desktop-settings.local.json"
+            example_path = Path(temp_dir) / "desktop-settings.example.json"
+            example_path.write_text(
+                '{"uiLanguage": "zh-CN"}',
+                encoding="utf-8",
+            )
+
+            settings = save_local_settings_update(
+                {"subtitleStyle": {"fontSize": 26, "position": "bottom"}},
+                local_path,
+                example_path,
+            )
+            persisted = read_local_settings(local_path, example_path)
+
+        self.assertEqual(settings.subtitle_style.font_size, 26)
+        self.assertEqual(persisted.subtitle_style, settings.subtitle_style)
+        payload = create_settings_file_payload(persisted)
+        self.assertEqual(
+            payload["subtitleStyle"],
+            {
+                "fontSize": 26,
+                "fontColor": "#ffffff",
+                "backgroundColor": "#0a0e16",
+                "backgroundOpacity": 0.78,
+                "position": "bottom",
+            },
         )
 
 

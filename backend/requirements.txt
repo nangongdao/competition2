@@ -13,3 +13,5 @@ numpy==1.26.4
 faster-whisper==1.2.1
 silero-vad==6.2.1
 loguru==0.7.3
+# 后端 TTS（语音合成）——edge 引擎（免费、无需 API key）；OpenAI 引擎用 httpx 已含在依赖树
+edge-tts==7.2.8

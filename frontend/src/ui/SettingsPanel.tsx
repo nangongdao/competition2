@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react'
 
+import { Check, Globe, KeyRound, Languages, LoaderCircle, RefreshCw, Save, X } from 'lucide-react'
+
 import { UI_LANGUAGE_OPTIONS, type UiText } from '../i18n'
 import type {
   DesktopAsrProfile,
@@ -7,6 +9,7 @@ import type {
   DesktopSettingsSnapshot,
   DesktopSettingsUpdate,
   SourceLanguage,
+  TargetLanguage,
   TranslationEngine,
   UiLanguage,
 } from '../types'
@@ -26,15 +29,8 @@ type SaveState = 'idle' | 'saving' | 'saved' | 'failed'
 
 const ASR_PROFILE_OPTIONS: DesktopAsrProfile[] = ['remote', 'light', 'cpu', 'gpu', 'env']
 const TRANSLATION_ENGINE_OPTIONS: TranslationEngine[] = ['openai', 'claude']
-const SOURCE_LANGUAGE_OPTIONS: SourceLanguage[] = ['auto', 'en', 'ja', 'ko', 'es', 'fr', 'de']
-
-
-const tapSafeButtonStyle: React.CSSProperties = {
-  border: 'none',
-  cursor: 'pointer',
-  fontWeight: 700,
-  WebkitTapHighlightColor: 'transparent',
-}
+const SOURCE_LANGUAGE_OPTIONS: SourceLanguage[] = ['auto', 'en', 'zh-CN', 'ja', 'ko', 'es', 'fr', 'de']
+const TARGET_LANGUAGE_OPTIONS: TargetLanguage[] = ['zh-CN', 'en', 'ja', 'ko', 'es', 'fr', 'de']
 
 
 export const SettingsPanel: React.FC<SettingsPanelProps> = ({
@@ -61,6 +57,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [sourceLanguage, setSourceLanguage] = useState<SourceLanguage>(
     settings.runtime.sourceLanguage,
   )
+  const [targetLanguage, setTargetLanguage] = useState<TargetLanguage>(
+    settings.runtime.targetLanguage,
+  )
   const [saveState, setSaveState] = useState<SaveState>('idle')
 
   useEffect(() => {
@@ -82,6 +81,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     setAsrOpenaiApiKey('')
     setClearAsrOpenaiApiKey(false)
     setSourceLanguage(settings.runtime.sourceLanguage)
+    setTargetLanguage(settings.runtime.targetLanguage)
     setSaveState('idle')
   }, [isOpen, settings])
 
@@ -130,6 +130,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
       runtime: {
         asrProfile,
         sourceLanguage,
+        targetLanguage,
       },
     })
 
@@ -165,16 +166,11 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
           <button
             type="button"
             aria-label={text.close}
-            style={{
-              ...tapSafeButtonStyle,
-              minWidth: '64px',
-              minHeight: '44px',
-              borderRadius: '10px',
-              background: 'rgba(255,255,255,0.08)',
-              color: '#d9e1eb',
-            }}
+            className="btn-secondary"
+            style={{ width: 'auto', minHeight: '40px', padding: '0 16px' }}
             onClick={onClose}
           >
+            <X size={14} />
             {text.close}
           </button>
         </div>
@@ -189,6 +185,10 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         ) : (
           <>
             <div className="settings-section">
+              <div className="settings-section-title">
+                <Globe size={14} />
+                Interface
+              </div>
               <SelectField
                 label={text.interfaceLanguage}
                 value={uiLanguage}
@@ -203,6 +203,10 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             </div>
 
             <div className="settings-section">
+              <div className="settings-section-title">
+                <Languages size={14} />
+                Translation
+              </div>
               <SelectField
                 label={text.translationEngine}
                 value={engine}
@@ -253,6 +257,10 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             </div>
 
             <div className="settings-section">
+              <div className="settings-section-title">
+                <KeyRound size={14} />
+                ASR
+              </div>
               <SelectField
                 label={text.asrProfile}
                 value={asrProfile}
@@ -299,40 +307,57 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   </option>
                 ))}
               </SelectField>
+
+              <SelectField
+                label={text.defaultTargetLanguage}
+                value={targetLanguage}
+                onChange={(value) => setTargetLanguage(parseTargetLanguage(value))}
+              >
+                {TARGET_LANGUAGE_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {uiText.control.targetOptions[option]}
+                  </option>
+                ))}
+              </SelectField>
             </div>
 
             <div className="settings-file-note">
               <span>{text.localFile}</span>
               <strong>{settings.configPath ?? '-'}</strong>
             </div>
-            <div className="settings-restart-note">{text.restartNotice}</div>
+            <div className="settings-restart-note">
+              <RefreshCw size={15} />
+              <span>{text.restartNotice}</span>
+            </div>
           </>
         )}
 
         <div className="settings-modal-footer">
           <div aria-live="polite" className="settings-save-status">
-            {saveState === 'saved'
-              ? text.saved
-              : saveState === 'failed'
-                ? text.saveFailed
-                : ''}
+            {saveState === 'saved' ? (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <Check size={14} /> {text.saved}
+              </span>
+            ) : saveState === 'failed' ? (
+              text.saveFailed
+            ) : ''}
           </div>
           <button
             type="button"
             disabled={!settings.available || saveState === 'saving'}
+            className="btn-primary"
             style={{
-              ...tapSafeButtonStyle,
               minHeight: '44px',
-              minWidth: '116px',
-              borderRadius: '10px',
-              background: !settings.available || saveState === 'saving' ? '#334255' : '#4aa3ff',
-              color: '#ffffff',
+              minWidth: '120px',
+              width: 'auto',
+              background: !settings.available || saveState === 'saving' ? '#334255' : 'linear-gradient(120deg, #2f8cff, #4aa3ff)',
               cursor: !settings.available || saveState === 'saving' ? 'not-allowed' : 'pointer',
             }}
             onClick={() => {
               void handleSave()
             }}
           >
+            {saveState === 'saving' ? <LoaderCircle size={16} className="spin" /> : <Save size={16} />}
             {saveState === 'saving' ? text.saving : text.save}
           </button>
         </div>
@@ -455,6 +480,7 @@ function parseAsrProfile(value: string): DesktopAsrProfile {
 function parseSourceLanguage(value: string): SourceLanguage {
   switch (value) {
     case 'auto':
+    case 'zh-CN':
     case 'ja':
     case 'ko':
     case 'es':
@@ -463,5 +489,20 @@ function parseSourceLanguage(value: string): SourceLanguage {
       return value
     default:
       return 'en'
+  }
+}
+
+
+function parseTargetLanguage(value: string): TargetLanguage {
+  switch (value) {
+    case 'en':
+    case 'ja':
+    case 'ko':
+    case 'es':
+    case 'fr':
+    case 'de':
+      return value
+    default:
+      return 'zh-CN'
   }
 }

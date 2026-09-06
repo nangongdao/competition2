@@ -5,6 +5,17 @@ export const RUNTIME_WS_URL_QUERY_PARAM = 'wsUrl'
 /** 允许的 WebSocket 主机（仅本机回环）。 */
 const ALLOWED_WS_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '::1'])
 
+/** Tauri 桌面端后端默认端口（与 Python launcher 一致）。 */
+export const TAURI_BACKEND_PORT = 8000
+
+/**
+ * 判断当前是否运行在 Tauri WebView 中。
+ * Tauri v2 通过 __TAURI_INTERNALS__ 暴露运行时标记。
+ */
+export function isTauriRuntime(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+}
+
 
 export interface WebSocketUrlOptions {
   runtimeUrl?: string | null
@@ -26,6 +37,16 @@ export function resolveWebSocketBaseUrl(options: WebSocketUrlOptions = {}): stri
 
   const hostname = normalizeHostname(options.hostname) ?? DEFAULT_BACKEND_HOST
   return `ws://${hostname}:${DEFAULT_BACKEND_PORT}/api/v1/ws/translate`
+}
+
+
+/**
+ * 解析内置终端 WebSocket 地址。
+ * 与翻译 WS 同一 host/port，路径为 /api/v1/ws/terminal。
+ */
+export function resolveTerminalWebSocketUrl(options: WebSocketUrlOptions = {}): string {
+  const base = resolveWebSocketBaseUrl(options)
+  return base.replace(/\/api\/v1\/ws\/translate\/?$/, '/api/v1/ws/terminal')
 }
 
 

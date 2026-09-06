@@ -1,3 +1,0 @@
-{"file": ".trellis/spec/backend/ai-interpreter-session-diagnostics.md", "reason": "Defines endurance runner diagnostics, thresholds, and local validation tooling contracts."}
-{"file": ".trellis/spec/backend/quality.md", "reason": "Backend/tool pre-commit checklist for tests and code quality."}
-{"file": ".trellis/spec/shared/code-quality.md", "reason": "Shared code quality rules for avoiding unsafe types, debug output, and dead code."}

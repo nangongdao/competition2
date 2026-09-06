@@ -1,0 +1,7 @@
+{
+  "source": "tests/fixtures/quality/reference-pairs.csv",
+  "pairs": 11,
+  "max_n": 4,
+  "corpus_bleu": 0.7942412364793691,
+  "avg_sentence_bleu": 0.8012229940330088
+}

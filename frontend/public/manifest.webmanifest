@@ -1,0 +1,20 @@
+{
+  "name": "AI 同声传译助手",
+  "short_name": "AI Interpreter",
+  "description": "实时外语音频流翻译成中文字幕/语音的桌面应用",
+  "lang": "zh-CN",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#05070d",
+  "theme_color": "#05070d",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

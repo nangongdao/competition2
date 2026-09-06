@@ -55,6 +55,9 @@ Return only one line.
         self._translation_cache: OrderedDict[str, str] = OrderedDict()
         self._context_fingerprint_by_segment: dict[str, str] = {}
         self._api_call_counts: Counter[str] = Counter()
+        # 阶段 4：防循环与限流状态
+        self._revision_timestamps: dict[str, list[float]] = {}
+        self._skipped_reasons: Counter[str] = Counter()
 
     async def check_and_revise(
         self,
@@ -66,6 +69,10 @@ Return only one line.
         trigger: str | None = None,
     ) -> list[RevisionResult]:
         revisions: list[RevisionResult] = []
+        # 阶段 4：会话总修正次数上限（防 API 成本失控）
+        if self._revision_count >= settings.revision_max_total:
+            self._skipped_reasons["max_total"] += 1
+            return revisions
         segments = context.get_all()
         revisable = segments[-settings.revision_max_window:-1]
 
@@ -80,6 +87,11 @@ Return only one line.
         should_force_due_to_ambiguity = force or self._has_semantic_ambiguity(trigger_segment)
 
         for segment in revisable:
+            # 阶段 4：防循环与限流 —— 片段级修正次数上限 + 时间节流
+            if not self._can_revise_segment(segment.id):
+                self._skipped_reasons["max_per_segment"] += 1
+                continue
+
             context_fingerprint = self._compute_request_hash(segment.text_asr, context_text)
             cached_translation = self._translation_cache.get(context_fingerprint)
 
@@ -129,6 +141,13 @@ Return only one line.
         trigger: str = "low_confidence",
     ) -> RevisionResult | None:
         """Use context-aware post-editing to improve low-confidence ASR text."""
+        # 阶段 4：防循环与限流 —— 会话总修正次数上限 + 片段级守卫
+        if self._revision_count >= settings.revision_max_total:
+            self._skipped_reasons["max_total"] += 1
+            return None
+        if not self._can_revise_segment(segment.id):
+            self._skipped_reasons["max_per_segment"] += 1
+            return None
         if segment.confidence >= settings.asr_correction_confidence_threshold:
             return None
 
@@ -175,6 +194,7 @@ Return only one line.
             len(corrected),
         )
         self._revision_count += 1
+        self._record_revision_timestamp(segment.id)
         return RevisionResult(
             segment_id=segment.id,
             new_text=new_translation,
@@ -197,8 +217,36 @@ Return only one line.
         self._api_call_counts.clear()
         return counts
 
+    def consume_skipped_counts(self) -> dict[str, int]:
+        """返回并清零因防循环/限流而跳过的修正计数（阶段 4 可观测）。"""
+        counts = dict(self._skipped_reasons)
+        self._skipped_reasons.clear()
+        return counts
+
     def has_semantic_ambiguity(self, segment: Segment | None) -> bool:
         return self._has_semantic_ambiguity(segment)
+
+    def _can_revise_segment(self, segment_id: str) -> bool:
+        """判断片段是否允许再次修正（阶段 4 防循环守卫）。
+
+        规则：
+        - 片段累计修正次数 < ``revision_max_per_segment``（防单片段震荡）；
+        - 距上次修正 >= ``revision_min_interval_seconds``（时间节流，
+          避免同一片段在静默/句数触发下被连续修正）。
+        """
+        timestamps = self._revision_timestamps.get(segment_id, [])
+        if len(timestamps) >= settings.revision_max_per_segment:
+            return False
+        if timestamps:
+            elapsed = time.time() - timestamps[-1]
+            if elapsed < settings.revision_min_interval_seconds:
+                return False
+        return True
+
+    def _record_revision_timestamp(self, segment_id: str) -> None:
+        """记录片段的一次修正时间戳（供防循环守卫使用）。"""
+        self._revision_timestamps.setdefault(segment_id, []).append(time.time())
+
 
     def _build_translation_revision(
         self,
@@ -218,6 +266,7 @@ Return only one line.
         old_translation = segment.text_translated
         segment.apply_revision(new_text, "translation_correction")
         self._revision_count += 1
+        self._record_revision_timestamp(segment.id)
         return RevisionResult(
             segment_id=segment.id,
             new_text=new_text,
