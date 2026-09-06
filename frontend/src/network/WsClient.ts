@@ -1,4 +1,4 @@
-import type { ClientDiagnostics, LanguageConfig, ServerMessage } from '../types'
+import type { ClientDiagnostics, LanguageConfig, ServerMessage, TranslationStyle } from '../types'
 
 
 export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'
@@ -9,6 +9,8 @@ export interface WsClientCallbacks {
   onMessage: (message: ServerMessage) => void
   onError: (error: Event) => void
   onDiagnosticsChange?: (diagnostics: ClientDiagnostics) => void
+  /** 二进制帧（如后端 TTS MP3 音频），紧随元信息帧之后到达。 */
+  onMessageBytes?: (payload: ArrayBuffer) => void
 }
 
 
@@ -31,6 +33,8 @@ export class WsClient {
   private _diagnostics: ClientDiagnostics
   private _languageConfig: LanguageConfig | null = null
   private _reconnectToken: string | null = null
+  private _stylePreset: TranslationStyle = 'concise'
+  private _asrHotwordsEnabled = true
 
   constructor(baseUrl: string) {
     this._baseUrl = baseUrl
@@ -53,6 +57,11 @@ export class WsClient {
 
   get diagnostics(): ClientDiagnostics {
     return { ...this._diagnostics }
+  }
+
+  /** 当前会话 ID（由 createSessionId 生成，随重连保持稳定）。 */
+  get sessionId(): string {
+    return this._diagnostics.sessionId
   }
 
   setCallbacks(callbacks: WsClientCallbacks): void {
@@ -127,6 +136,24 @@ export class WsClient {
     this._sendLanguageConfigIfOpen()
   }
 
+  /** 设置翻译风格预设（阶段 3），连接打开时立即下发。 */
+  setStylePreset(style: TranslationStyle): void {
+    this._stylePreset = style
+    if (!this._languageConfig) {
+      this._languageConfig = { sourceLanguage: 'en', targetLanguage: 'zh-CN' }
+    }
+    this._sendLanguageConfigIfOpen()
+  }
+
+  /** 设置 ASR 热词注入开关（阶段 2），连接打开时立即下发。 */
+  setAsrHotwordsEnabled(enabled: boolean): void {
+    this._asrHotwordsEnabled = enabled
+    if (!this._languageConfig) {
+      this._languageConfig = { sourceLanguage: 'en', targetLanguage: 'zh-CN' }
+    }
+    this._sendLanguageConfigIfOpen()
+  }
+
   disconnect(): void {
     this._intentionalClose = true
     this._clearReconnect()
@@ -161,6 +188,12 @@ export class WsClient {
         const message = JSON.parse(event.data) as ServerMessage
         this._captureReconnectToken(message)
         this._callbacks?.onMessage(message)
+        return
+      }
+
+      // 二进制帧：转发给二进制回调（当前用于后端 TTS MP3 音频）。
+      if (event.data instanceof ArrayBuffer) {
+        this._callbacks?.onMessageBytes?.(event.data)
       }
     } catch (err) {
       console.error('[WsClient] Failed to parse message:', err)
@@ -227,6 +260,8 @@ export class WsClient {
       type: 'config',
       language: this._languageConfig.sourceLanguage,
       target_language: this._languageConfig.targetLanguage,
+      style_preset: this._stylePreset,
+      asr_hotwords_enabled: this._asrHotwordsEnabled,
     })
   }
 }

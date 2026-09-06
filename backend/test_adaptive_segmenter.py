@@ -150,6 +150,60 @@ class AdaptiveSegmenterTests(unittest.TestCase):
         )
         self.assertFalse(segmenter.should_emit(np.empty(0, dtype=np.float32)))
 
+    def test_vad_parameters_drive_cut_points(self) -> None:
+        """V2.4：vad_min_speech_ms / vad_min_silence_ms / vad_max_sentence_s 参数化切分。
+
+        用 250ms 最小语音 + 500ms 静音边界 + 2s 最大句长验证：
+        - 未达 min_speech 不切分；
+        - 静音达 min_silence 即切分；
+        - 超 max_sentence 强制切分。
+        """
+        min_speech = int(self.sample_rate * 0.25)
+
+        segmenter = AdaptiveSegmenter(
+            sample_rate=self.sample_rate,
+            min_segment_ms=250,
+            max_segment_ms=2000,
+            silence_boundary_ms=500,
+        )
+
+        # 累积 200ms < 250ms，不切分
+        self.assertFalse(segmenter.should_emit(make_samples(min_speech - 100)))
+        self.assertEqual(segmenter.take_buffer().size, min_speech - 100)
+
+        # 纯时长路径：超过 max_sentence 强制切分
+        segmenter2 = AdaptiveSegmenter(
+            sample_rate=self.sample_rate,
+            min_segment_ms=250,
+            max_segment_ms=2000,
+            silence_boundary_ms=500,
+        )
+        emitted = False
+        for _ in range(30):  # 30 * 100ms = 3s > 2s
+            if segmenter2.should_emit(make_samples(1600)):
+                emitted = True
+                break
+        self.assertTrue(emitted)
+        # 达到 max_sentence (2s=32000) 即强制切分：20 帧 * 1600 = 32000
+        self.assertEqual(segmenter2.take_buffer().size, 20 * 1600)
+
+        # VAD 静音边界：250ms 语音帧 + 500ms 静音帧触发
+        vad = FakeVAD(speech_chunks={min_speech})
+        segmenter3 = AdaptiveSegmenter(
+            sample_rate=self.sample_rate,
+            min_segment_ms=250,
+            max_segment_ms=2000,
+            silence_boundary_ms=500,
+            vad=vad,
+        )
+        segmenter3.should_emit(make_samples(min_speech))  # 语音帧，够 min
+        emitted = False
+        for _ in range(6):  # 6 * 100ms = 600ms 静音 > 500ms
+            if segmenter3.should_emit(make_samples(1600)):
+                emitted = True
+                break
+        self.assertTrue(emitted)
+
 
 if __name__ == "__main__":
     unittest.main()

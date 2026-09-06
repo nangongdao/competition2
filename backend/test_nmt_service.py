@@ -13,6 +13,7 @@ if str(BACKEND_ROOT) not in sys.path:
 
 from models.segment import ContextWindow, Segment
 from services.nmt_service import NMTService, MAX_RETRY_ATTEMPTS, RETRYABLE_STATUS_CODES, _is_retryable
+from core.config import settings
 from core.exceptions import NMTError
 
 
@@ -107,6 +108,87 @@ class NMTServiceOpenAITests(unittest.IsolatedAsyncioTestCase):
         user_message = messages[1]["content"]
         self.assertIn("Japanese speech to Simplified Chinese", system_message)
         self.assertIn("from Japanese to Simplified Chinese", user_message)
+
+    async def test_system_prompt_includes_style_instruction(self) -> None:
+        """阶段 3：翻译风格预设应注入 system prompt。"""
+        service = NMTService()
+        service.set_style_preset("faithful")
+        fake_client = FakeOpenAIClient([
+            chunk_with_content("translated"),
+        ])
+        service._client = fake_client
+        context = ContextWindow(session_id="test-session", window_size=10)
+        current = Segment(
+            id="test-1",
+            text_asr="hello world",
+            confidence=1.0,
+        )
+
+        tokens = [
+            token
+            async for token in service._translate_openai(context, current)
+        ]
+
+        self.assertEqual(tokens, ["translated", "<FINAL>"])
+        request = fake_client.completions.last_request
+        self.assertIsNotNone(request)
+        if request is None:
+            raise AssertionError("Expected OpenAI request metadata.")
+        messages = request["messages"]
+        self.assertIsInstance(messages, list)
+        system_message = messages[0]["content"]
+        self.assertIn("FAITHFUL", system_message)
+        self.assertIn("preserving", system_message)
+
+    async def test_default_style_skips_extra_instruction(self) -> None:
+        """默认简洁风格不应注入额外指令（与历史行为一致）。"""
+        service = NMTService()
+        fake_client = FakeOpenAIClient([
+            chunk_with_content("translated"),
+        ])
+        service._client = fake_client
+        context = ContextWindow(session_id="test-session", window_size=10)
+        current = Segment(
+            id="test-1",
+            text_asr="hello world",
+            confidence=1.0,
+        )
+
+        tokens = [
+            token
+            async for token in service._translate_openai(context, current)
+        ]
+
+        self.assertEqual(tokens, ["translated", "<FINAL>"])
+        request = fake_client.completions.last_request
+        self.assertIsNotNone(request)
+        if request is None:
+            raise AssertionError("Expected OpenAI request metadata.")
+        messages = request["messages"]
+        system_message = messages[0]["content"]
+        self.assertNotIn("FAITHFUL", system_message)
+        self.assertNotIn("LECTURE NOTES", system_message)
+
+    def test_style_preset_property_tracks_update(self) -> None:
+        service = NMTService()
+        self.assertEqual(service.style_preset, "concise")
+        service.set_style_preset("lecture")
+        self.assertEqual(service.style_preset, "lecture")
+        service.set_style_preset("unknown-style")
+        self.assertEqual(service.style_preset, "concise")
+
+    def test_rules_prompt_keeps_numbers_and_proper_nouns(self) -> None:
+        """阶段 3：数字与专名稳定输出 —— 提示词规则包含数字/专名保持约束。"""
+        from services.nmt_service import NMTService as NMT
+
+        rules = NMT.RULES_PROMPT
+        self.assertIn("numbers", rules.lower())
+        self.assertIn("proper nouns", rules.lower())
+        # 数字规则：不四舍五入、不增删数字
+        self.assertIn("do not round", rules.lower())
+        self.assertIn("digits", rules.lower())
+        # 专名规则：保持原形，除非有通用中文译名
+        self.assertIn("original form", rules.lower())
 
 
 class RetryableFakeCompletions:
@@ -207,6 +289,109 @@ class NMTServiceRetryTests(unittest.IsolatedAsyncioTestCase):
         wrapped = NMTError("openai auth failed", status_code=None)
         wrapped.__cause__ = ValueError("invalid api key")
         self.assertFalse(_is_retryable(wrapped))
+
+
+class NMTServiceTranslationMemoryTests(unittest.IsolatedAsyncioTestCase):
+    """V5.3 翻译记忆库集成测试：命中复用 + 翻译后写回。"""
+
+    async def test_lookup_hit_reuses_translation_without_api_call(self) -> None:
+        from services.translation_memory import TranslationMemoryService
+
+        service = NMTService()
+        service._engine = "openai"
+        # 预置记忆库：完整命中（与 collect_translate_stream_tokens 的句子一致）
+        tm = TranslationMemoryService(session_id="tm-test", similarity_threshold=0.82)
+        tm.add("Good morning", "大家早上好", language_pair="en->zh-CN")
+        service.attach_translation_memory(tm)
+
+        # 若命中则不会触达上游，因此 client 故意不配置也会成功
+        tokens = await collect_translate_stream_tokens(service)
+
+        self.assertEqual(tokens, ["大家早上好", "<FINAL>"])
+
+    async def test_lookup_miss_falls_through_to_api(self) -> None:
+        from services.translation_memory import TranslationMemoryService
+
+        service = NMTService()
+        service._engine = "openai"
+        service._client = FakeOpenAIClient([chunk_with_content("新译文")])
+        tm = TranslationMemoryService(session_id="tm-test", similarity_threshold=0.82)
+        tm.add("Good morning everyone", "大家早上好", language_pair="en->zh-CN")
+        service.attach_translation_memory(tm)
+
+        # 完全不同的句子：不命中，走 API
+        tokens = await collect_translate_stream_tokens(service)
+
+        self.assertEqual(tokens, ["新译文", "<FINAL>"])
+
+    async def test_fuzzy_hit_reuses_for_similar_sentence(self) -> None:
+        from services.translation_memory import TranslationMemoryService
+
+        service = NMTService()
+        service._engine = "openai"
+        tm = TranslationMemoryService(session_id="tm-test", similarity_threshold=0.82)
+        tm.add(
+            "The Kubernetes cluster is running in production",
+            "Kubernetes 集群已在生产环境运行",
+            language_pair="en->zh-CN",
+        )
+        service.attach_translation_memory(tm)
+
+        context = ContextWindow(session_id="tm-test", window_size=10)
+        current = Segment(
+            id="tm-1",
+            text_asr="The Kubernetes cluster is running in production now",
+            confidence=1.0,
+        )
+        tokens = [
+            token
+            async for token in service.translate_stream(context, current)
+        ]
+
+        self.assertEqual(tokens, ["Kubernetes 集群已在生产环境运行", "<FINAL>"])
+
+    def test_record_translation_writes_to_tm(self) -> None:
+        from services.translation_memory import TranslationMemoryService
+
+        service = NMTService()
+        tm = TranslationMemoryService(session_id="tm-test")
+        service.attach_translation_memory(tm)
+
+        segment = Segment(
+            id="tm-2",
+            text_asr="Hello world",
+            confidence=1.0,
+            source_language="en",
+            target_language="zh-CN",
+        )
+        service.record_translation(segment, "你好世界")
+
+        self.assertEqual(tm.size, 1)
+        stats = tm.stats
+        self.assertEqual(stats["written"], 1)
+        # 再次翻译相同句子应命中记忆库
+        match = tm.lookup("Hello world", language_pair="en->zh-CN")
+        self.assertIsNotNone(match)
+        if match is not None:
+            self.assertEqual(match.translated, "你好世界")
+
+    async def test_translation_memory_disabled_skips_lookup(self) -> None:
+        from services.translation_memory import TranslationMemoryService
+
+        original = settings.translation_memory_enabled
+        settings.translation_memory_enabled = False
+        try:
+            service = NMTService()
+            service._engine = "openai"
+            tm = TranslationMemoryService(session_id="tm-test")
+            tm.add("Good morning", "大家早上好", language_pair="en->zh-CN")
+            service.attach_translation_memory(tm)
+
+            # 禁用时命中也应返回 None，走 API（client 未配置会降级为原文透传）
+            tokens = await collect_translate_stream_tokens(service)
+            self.assertTrue(tokens[0].startswith("[未翻译]"))
+        finally:
+            settings.translation_memory_enabled = original
 
 
 async def collect_tokens(service: NMTService) -> list[str]:

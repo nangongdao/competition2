@@ -107,6 +107,33 @@ class SettingsConfigTests(unittest.TestCase):
         self.assertEqual(settings.audio_max_chunks_per_second, 20)
         self.assertEqual(settings.redis_key_prefix, "ai-interpreter")
 
+    def test_vad_parameters_are_configurable_and_defaulted(self) -> None:
+        """V2.4：VAD 切分参数可通过环境变量覆盖，默认值符合 ROADMAP。"""
+        with patch.dict(os.environ, {}, clear=True):
+            settings = Settings(_env_file=())
+
+        self.assertEqual(settings.vad_threshold, 0.5)
+        self.assertEqual(settings.vad_min_silence_ms, 500)
+        self.assertEqual(settings.vad_min_speech_ms, 250)
+        self.assertEqual(settings.vad_max_sentence_s, 15)
+
+        with patch.dict(
+            os.environ,
+            {
+                "VAD_MIN_SILENCE_MS": "800",
+                "VAD_MIN_SPEECH_MS": "300",
+                "VAD_MAX_SENTENCE_S": "20",
+                "VAD_THRESHOLD": "0.7",
+            },
+            clear=True,
+        ):
+            overridden = Settings(_env_file=())
+
+        self.assertEqual(overridden.vad_min_silence_ms, 800)
+        self.assertEqual(overridden.vad_min_speech_ms, 300)
+        self.assertEqual(overridden.vad_max_sentence_s, 20)
+        self.assertEqual(overridden.vad_threshold, 0.7)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -8,6 +8,20 @@ export type ServerMessage =
   | SessionDiagnosticsMessage
   | StatusMessage
   | ErrorMessage
+  | TtsAudioMessage
+
+/**
+ * 后端 TTS 音频元信息帧（随后的二进制帧携带 MP3 数据）。
+ * 协议见 backend/core/pipeline.py `_emit_tts_audio`。
+ */
+export interface TtsAudioMessage {
+  type: 'tts_audio'
+  segment_id: string
+  segment_index?: number
+  format: 'mp3'
+  /** 后续二进制帧的字节长度（便于前端校验/丢弃）。 */
+  length: number
+}
 
 export interface AsrPartialMessage {
   type: 'asr_partial'
@@ -26,6 +40,11 @@ export interface AsrFinalMessage {
   target_language?: string
   /** 说话人标识（启用说话人分离时下发，如 "speaker_1"）。 */
   speaker_id?: string
+  /**
+   * 阶段 8：源语言自动检测模式下，Whisper 检测到的源语言代码
+   * （如 en / ja / zh-CN）；非 auto 模式或未检测时为 undefined。
+   */
+  detected_language?: string
 }
 
 export interface TranslationTokenMessage {
@@ -51,6 +70,28 @@ export interface RevisionMessage {
   trigger?: string
   latency_ms?: number
   confidence?: number
+}
+
+/**
+ * 修正时间线上的单条事件（前端由 RevisionMessage 累积而成）。
+ * 用于阶段 4「修正历史可观测」：用户可回溯本次会话的所有修正记录。
+ */
+export interface RevisionEvent {
+  id: string
+  segmentId: string
+  /** 片段序号（用于定位对应的字幕条目）。 */
+  segmentIndex?: number
+  newText: string
+  sourceText?: string
+  oldText?: string
+  oldSourceText?: string
+  reason: RevisionReason
+  correctionSource?: string
+  trigger?: string
+  latencyMs?: number
+  confidence?: number
+  /** 修正发生时的本地时间戳（毫秒）。 */
+  timestamp: number
 }
 
 export interface LatencySummary {
@@ -113,13 +154,36 @@ export interface ControlMessage {
   type: 'pause' | 'resume' | 'config' | 'manual_revise' | 'request_diagnostics'
   language?: SourceLanguage
   target_language?: TargetLanguage
+  style_preset?: TranslationStyle
 }
 
 export type SubtitleMode = 'bilingual' | 'translation_only' | 'source_only'
 
-export type SourceLanguage = 'auto' | 'en' | 'ja' | 'ko' | 'es' | 'fr' | 'de'
+/**
+ * 翻译风格预设（阶段 3 字幕风格控制）：
+ * - `concise`：简洁 —— 贴近原句长度，去冗余（默认）
+ * - `faithful`：忠实 —— 完整保留信息与语气
+ * - `lecture`：讲义式 —— 面向学习/复盘，适当展开关键概念
+ */
+export type TranslationStyle = 'concise' | 'faithful' | 'lecture'
 
-export type TargetLanguage = 'zh-CN'
+export type SubtitlePosition = 'bottom' | 'middle' | 'top'
+
+/**
+ * 字幕样式配置（V2.3）：字体大小 / 字体颜色 / 背景透明度 / 背景色 / 字幕位置。
+ * 应用于主界面字幕、悬浮字幕窗（Electron / Tauri / Web 浮窗）并持久化到本地设置。
+ */
+export interface SubtitleStyleConfig {
+  fontSize: number          // 12-36，默认 22
+  fontColor: string         // 十六进制颜色，默认 '#ffffff'
+  backgroundColor: string   // 十六进制颜色，默认 '#0a0e16'
+  backgroundOpacity: number // 0-1，默认 0.78
+  position: SubtitlePosition
+}
+
+export type SourceLanguage = 'auto' | 'en' | 'zh-CN' | 'ja' | 'ko' | 'es' | 'fr' | 'de'
+
+export type TargetLanguage = 'zh-CN' | 'en' | 'ja' | 'ko' | 'es' | 'fr' | 'de'
 
 export type UiLanguage = 'zh-CN' | 'en-US'
 
@@ -151,7 +215,9 @@ export interface DesktopSettingsSnapshot {
   runtime: {
     asrProfile: DesktopAsrProfile
     sourceLanguage: SourceLanguage
+    targetLanguage: TargetLanguage
   }
+  subtitleStyle: SubtitleStyleConfig
 }
 
 export interface DesktopSettingsUpdate {
@@ -174,7 +240,9 @@ export interface DesktopSettingsUpdate {
   runtime: {
     asrProfile: DesktopAsrProfile
     sourceLanguage: SourceLanguage
+    targetLanguage: TargetLanguage
   }
+  subtitleStyle?: SubtitleStyleConfig
 }
 
 export interface DesktopSettingsSaveResult {
@@ -185,11 +253,28 @@ export interface DesktopSettingsSaveResult {
 
 export type AudioCaptureBackend = 'audio-worklet' | 'script-processor'
 
+/**
+ * 音频输入源类型：
+ * - `mic`：麦克风（getUserMedia，无需共享屏幕）
+ * - `tab`：标签页/窗口音频（getDisplayMedia，共享屏幕时勾选分享音频）
+ * - `system`：Tauri 系统音频 loopback（需 --features system-audio 构建 + loopback 驱动）
+ * - `file`：本地音频文件（WAV/MP3 等，离线解码后按实时节奏送入管线）
+ */
+export type AudioSourceType = 'mic' | 'tab' | 'system' | 'file'
+
 export interface TtsSettings {
   enabled: boolean
   volume: number
   rate: number
 }
+
+/**
+ * 语音播放引擎选择：
+ * - `auto`：自动——优先使用后端 TTS（MP3），收不到后端音频时回退本地浏览器语音
+ * - `local`：本地浏览器 speechSynthesis（流式低延迟，质量取决于系统语音）
+ * - `backend`：后端 TTS 合成（edge-tts / OpenAI，需后端 tts_engine 已启用）
+ */
+export type TtsEngine = 'auto' | 'local' | 'backend'
 
 export interface TtsDiagnostics {
   isSupported: boolean

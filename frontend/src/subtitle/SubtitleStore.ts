@@ -26,6 +26,16 @@ export class SubtitleStore {
     return this._mode
   }
 
+  /**
+   * 第二梯队-方向 3：获取不可变快照（用于单一数据流 / useSyncExternalStore）。
+   */
+  getSnapshot(): { visible: SubtitleEntry[]; history: SubtitleEntry[] } {
+    return {
+      visible: this._subtitles.map((entry) => ({ ...entry })),
+      history: this._history.map((entry) => ({ ...entry })),
+    }
+  }
+
   subscribe(listener: () => void): () => void {
     this._listeners.add(listener)
     return () => this._listeners.delete(listener)
@@ -121,6 +131,33 @@ export class SubtitleStore {
   reset(): void {
     this._subtitles = []
     this._history = []
+    this._notify()
+  }
+
+  /**
+   * 批量恢复导入的字幕历史（会先清空当前历史）。
+   *
+   * 用于会话产物导入：把解析出的字幕条目回填到 Store，
+   * 使历史面板与导出能力立即可用，而不需要重新翻译。
+   */
+  restoreHistory(entries: SubtitleEntry[]): void {
+    this._history = []
+    for (const entry of entries) {
+      const normalized: SubtitleEntry = {
+        segmentId: entry.segmentId,
+        sourceText: entry.sourceText ?? '',
+        translatedText: entry.translatedText ?? '',
+        isPartial: false,
+        isRevised: entry.isRevised ?? false,
+        revisionReason: entry.revisionReason,
+        revisedAt: entry.revisedAt,
+        timestamp: entry.timestamp ?? Date.now(),
+        seq: entry.seq,
+        speaker: entry.speaker,
+      }
+      this._insertOrdered(normalized)
+    }
+    this._cleanup()
     this._notify()
   }
 

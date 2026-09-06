@@ -37,10 +37,31 @@ describe('desktop subtitle overlay helpers', () => {
 
     assert.equal(snapshot.updatedAt, 123)
     assert.equal(snapshot.mode, 'translation_only')
+    assert.deepEqual(snapshot.style, {
+      fontSize: 22,
+      fontColor: '#ffffff',
+      backgroundColor: '#0a0e16',
+      backgroundOpacity: 0.78,
+      position: 'bottom',
+    })
     assert.notEqual(snapshot.entries[0], entries[0])
 
     entries[0].translatedText = 'changed'
     assert.equal(snapshot.entries[0]?.translatedText, '你好')
+  })
+
+  it('embeds the configured subtitle style into the snapshot', () => {
+    const style = {
+      fontSize: 30,
+      fontColor: '#f0f0f0',
+      backgroundColor: '#0b0f1a',
+      backgroundOpacity: 0.82,
+      position: 'top' as const,
+    }
+    const snapshot = createDesktopOverlaySnapshot([], 'bilingual', 5, style)
+
+    assert.deepEqual(snapshot.style, style)
+    assert.notEqual(snapshot.style, style)
   })
 
   it('derives display state from subtitle mode and revision metadata', () => {

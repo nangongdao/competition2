@@ -8,6 +8,13 @@
 
 import type { AudioCaptureBackend } from '../types'
 
+/**
+ * 音频采集模式：
+ * - `tab`：标签页/窗口音频（getDisplayMedia，共享屏幕时勾选分享音频）
+ * - `mic`：麦克风（getUserMedia，无需共享屏幕）
+ */
+export type AudioCaptureMode = 'tab' | 'mic'
+
 const AUDIO_CONFIG = {
   sampleRate: 16000,
   channelCount: 1,
@@ -42,6 +49,20 @@ export class AudioCapture {
   private _chunkTimer: ReturnType<typeof setInterval> | null = null
   private _chunkBuffer: Float32Array[] = []
   private _captureBackend: AudioCaptureBackend | null = null
+  /** 当前采集模式（tab/mic），默认 tab 保持向后兼容。 */
+  private _mode: AudioCaptureMode = 'tab'
+
+  get mode(): AudioCaptureMode {
+    return this._mode
+  }
+
+  /** 切换采集模式（仅在未激活时生效；运行中调用会被忽略）。 */
+  setMode(mode: AudioCaptureMode): void {
+    if (this._state === 'active') {
+      return
+    }
+    this._mode = mode
+  }
 
   private readonly _handleAudioTrackEnded = (): void => {
     if (this._state === 'active') {
@@ -67,18 +88,15 @@ export class AudioCapture {
     }
 
     try {
-      this._stream = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
-        audio: {
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-        },
-      })
+      this._stream = await this._acquireStream()
 
       const audioTrack = this._stream.getAudioTracks()[0]
       if (!audioTrack) {
-        throw new Error('No audio track available. Please enable "Share audio".')
+        throw new Error(
+          this._mode === 'mic'
+            ? 'No microphone audio track available.'
+            : 'No audio track available. Please enable "Share audio".',
+        )
       }
       audioTrack.addEventListener('ended', this._handleAudioTrackEnded)
 
@@ -108,6 +126,28 @@ export class AudioCapture {
   stop(): void {
     this._cleanupResources()
     this._setState('inactive')
+  }
+
+  private async _acquireStream(): Promise<MediaStream> {
+    if (this._mode === 'mic') {
+      return navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+        video: false,
+      })
+    }
+
+    return navigator.mediaDevices.getDisplayMedia({
+      video: true,
+      audio: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+      },
+    })
   }
 
   private async _tryStartAudioWorklet(): Promise<boolean> {

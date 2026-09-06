@@ -1,6 +1,11 @@
 import React, { useEffect, useState } from 'react'
 
 import {
+  buildSubtitleStyleVarMap,
+  normalizeSubtitleStyle,
+} from '../subtitle/subtitle-style'
+import type { SubtitlePosition } from '../types'
+import {
   createDesktopOverlaySnapshot,
   getDesktopBridge,
   getSubtitleDisplayState,
@@ -10,6 +15,13 @@ import { isWebOverlaySurface, subscribeToWebOverlaySnapshots } from './web-overl
 
 
 const EMPTY_OVERLAY_SNAPSHOT = createDesktopOverlaySnapshot([], 'bilingual', 0)
+
+
+const POSITION_ALIGN: Record<SubtitlePosition, string> = {
+  bottom: 'flex-end',
+  middle: 'center',
+  top: 'flex-start',
+}
 
 
 export const DesktopSubtitleOverlay: React.FC = () => {
@@ -37,9 +49,19 @@ export const DesktopSubtitleOverlay: React.FC = () => {
     }
   }, [])
 
+  const style = normalizeSubtitleStyle(snapshot.style)
+  const shellStyle = {
+    '--subtitle-align': POSITION_ALIGN[style.position],
+  } as React.CSSProperties
+  const stackStyle = buildSubtitleStyleVarMap(style) as React.CSSProperties
+
   return (
-    <main aria-label="Floating subtitles" className="desktop-subtitle-overlay-shell">
-      <div className="desktop-subtitle-stack">
+    <main
+      aria-label="Floating subtitles"
+      className="desktop-subtitle-overlay-shell"
+      style={shellStyle}
+    >
+      <div className="desktop-subtitle-stack" style={stackStyle}>
         {snapshot.entries.map((entry) => {
           const displayState = getSubtitleDisplayState(entry, snapshot.mode)
 

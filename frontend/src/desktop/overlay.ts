@@ -4,13 +4,17 @@ import type {
   DesktopSettingsUpdate,
   SubtitleEntry,
   SubtitleMode,
+  SubtitleStyleConfig,
 } from '../types'
+import { DEFAULT_SUBTITLE_STYLE } from '../subtitle/subtitle-style'
 
 
 export interface DesktopOverlaySnapshot {
   entries: SubtitleEntry[]
   mode: SubtitleMode
   updatedAt: number
+  /** 字幕样式配置（V2.3）：浮窗渲染时应用相同 CSS 变量。 */
+  style?: SubtitleStyleConfig
 }
 
 
@@ -61,11 +65,13 @@ export function createDesktopOverlaySnapshot(
   entries: SubtitleEntry[],
   mode: SubtitleMode,
   updatedAt = Date.now(),
+  style: SubtitleStyleConfig = DEFAULT_SUBTITLE_STYLE,
 ): DesktopOverlaySnapshot {
   return {
     entries: getVisibleOverlayEntries(entries),
     mode,
     updatedAt,
+    style: { ...style },
   }
 }
 

@@ -76,6 +76,8 @@ describe('WsClient', () => {
       type: 'config',
       language: 'ja',
       target_language: 'zh-CN',
+      style_preset: 'concise',
+      asr_hotwords_enabled: true,
     })
   })
 
@@ -101,7 +103,107 @@ describe('WsClient', () => {
       type: 'config',
       language: 'fr',
       target_language: 'zh-CN',
+      style_preset: 'concise',
+      asr_hotwords_enabled: true,
     })
+  })
+
+  it('sends target language changes through the config payload', () => {
+    installWebSocketMock()
+    const client = new WsClient('ws://localhost:8000/api/v1/ws/translate')
+
+    client.setCallbacks({
+      onStateChange: () => undefined,
+      onMessage: () => undefined,
+      onError: () => undefined,
+    })
+    client.connect()
+    const socket = latestSocket()
+    socket.open()
+
+    client.setLanguageConfig({
+      sourceLanguage: 'zh-CN',
+      targetLanguage: 'en',
+    })
+
+    assert.deepEqual(JSON.parse(readSentText(socket, 0)), {
+      type: 'config',
+      language: 'zh-CN',
+      target_language: 'en',
+      style_preset: 'concise',
+      asr_hotwords_enabled: true,
+    })
+  })
+
+  it('sends a style preset change through the config payload', () => {
+    installWebSocketMock()
+    const client = new WsClient('ws://localhost:8000/api/v1/ws/translate')
+
+    client.setCallbacks({
+      onStateChange: () => undefined,
+      onMessage: () => undefined,
+      onError: () => undefined,
+    })
+    client.connect()
+    const socket = latestSocket()
+    socket.open()
+
+    client.setStylePreset('lecture')
+
+    assert.deepEqual(JSON.parse(readSentText(socket, 0)), {
+      type: 'config',
+      language: 'en',
+      target_language: 'zh-CN',
+      style_preset: 'lecture',
+      asr_hotwords_enabled: true,
+    })
+  })
+
+  it('sends an ASR hotwords toggle through the config payload', () => {
+    installWebSocketMock()
+    const client = new WsClient('ws://localhost:8000/api/v1/ws/translate')
+
+    client.setCallbacks({
+      onStateChange: () => undefined,
+      onMessage: () => undefined,
+      onError: () => undefined,
+    })
+    client.connect()
+    const socket = latestSocket()
+    socket.open()
+
+    client.setAsrHotwordsEnabled(false)
+
+    assert.deepEqual(JSON.parse(readSentText(socket, 0)), {
+      type: 'config',
+      language: 'en',
+      target_language: 'zh-CN',
+      style_preset: 'concise',
+      asr_hotwords_enabled: false,
+    })
+  })
+
+  it('forwards binary frames to the bytes callback after metadata frames', () => {
+    installWebSocketMock()
+    const client = new WsClient('ws://localhost:8000/api/v1/ws/translate')
+    const received: ArrayBuffer[] = []
+
+    client.setCallbacks({
+      onStateChange: () => undefined,
+      onMessage: () => undefined,
+      onError: () => undefined,
+      onMessageBytes: (payload) => received.push(payload),
+    })
+    client.connect()
+    const socket = latestSocket()
+    socket.open()
+
+    const binary = new ArrayBuffer(8)
+    new Uint8Array(binary).fill(0x50)
+    socket.onmessage?.(new MessageEvent('message', { data: binary }))
+
+    assert.equal(received.length, 1)
+    assert.equal(received[0].byteLength, 8)
   })
 })
 

@@ -14,6 +14,17 @@ if (!rootElement) {
 const surface = getSurface()
 document.documentElement.dataset.surface = surface
 
+// 离线模式（ROADMAP V5.4）：生产环境注册 Service Worker。
+// 仅注册应用主界面（避免悬浮字幕窗重复注册）；开发环境跳过，
+// 防止 SW 缓存干扰 Vite HMR。
+if (surface === 'app' && import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch((error: unknown) => {
+      console.warn('[PWA] service worker registration failed', error)
+    })
+  })
+}
+
 ReactDOM.createRoot(rootElement).render(
   <React.StrictMode>
     {surface === 'subtitle-overlay' ? <DesktopSubtitleOverlay /> : <App />}

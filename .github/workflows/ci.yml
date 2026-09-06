@@ -8,12 +8,16 @@ on:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
           cache: pip
           cache-dependency-path: backend/requirements.lock.txt
 
@@ -50,3 +54,123 @@ jobs:
       - name: 单元测试
         working-directory: frontend
         run: npm test
+
+  # 质量回归：每次提交自动跑翻译质量（BLEU）+ ASR 识别质量（WER/CER），
+  # 与固化基线对比，超阈值即失败。纯标准库实现，无需重依赖，秒级完成。
+  quality-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 运行质量回归（BLEU + WER/CER）
+        run: python tools/quality_regression.py
+
+  # 依赖安全审计：拦截已知漏洞依赖（npm + pip）。
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 安装前端依赖（用于 npm audit）
+        working-directory: frontend
+        run: npm ci
+
+      - name: npm 依赖安全审计
+        working-directory: frontend
+        # --audit-level=high：仅 high/critical 漏洞使 CI 失败（避免低危噪音）
+        run: npm audit --audit-level=high
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 安装 pip-audit
+        run: pip install pip-audit
+
+      - name: Python 依赖安全审计
+        # --no-deps：直接依赖审计；仅 high/critical 使 CI 失败。
+        run: pip-audit -r backend/requirements.txt --no-deps
+
+  # E2E 端到端测试（TD-7）：Playwright 驱动关键用户流程，
+  # mock WebSocket/API 桩数据，无需真实后端/ASR/NMT。
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 安装前端依赖
+        working-directory: frontend
+        run: npm ci
+
+      - name: 安装 Playwright Chromium 及系统依赖
+        working-directory: frontend
+        run: |
+          npx playwright install --with-deps chromium
+
+      - name: 构建前端
+        working-directory: frontend
+        run: npm run build
+
+      - name: 运行 E2E 测试
+        working-directory: frontend
+        run: npx playwright test
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          retention-days: 7
+
+  tauri:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Tauri 系统依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential \
+            curl wget file libxdo-dev libssl-dev \
+            libayatana-appindicator3-dev librsvg2-dev patchelf \
+            libgtk-3-dev libasound2-dev
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 安装前端依赖
+        working-directory: frontend
+        run: npm ci
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: frontend/src-tauri
+
+      - name: cargo check（默认特性）
+        working-directory: frontend/src-tauri
+        run: cargo check
+
+      - name: cargo check（system-audio 特性）
+        working-directory: frontend/src-tauri
+        run: cargo check --features system-audio

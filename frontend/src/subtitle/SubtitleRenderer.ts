@@ -1,11 +1,14 @@
-import type { SubtitleEntry, SubtitleMode } from '../types'
+import type { SubtitleEntry, SubtitleMode, SubtitleStyleConfig } from '../types'
 import { speakerColor } from './speaker'
+import { DEFAULT_SUBTITLE_STYLE } from './subtitle-style'
+import type { SubtitleStore } from './SubtitleStore'
 
 
 export interface SubtitleRendererConfig {
   container: HTMLElement
   maxLines?: number
   bottomOffset?: string
+  style?: SubtitleStyleConfig
 }
 
 
@@ -13,11 +16,15 @@ export class SubtitleRenderer {
   private _overlay: HTMLDivElement
   private _maxLines: number
   private _entries: Map<string, HTMLDivElement> = new Map()
+  /** 已渲染内容的签名，用于跳过未变化的条目（第二梯队-方向 3）。 */
+  private _renderedContent: Map<string, string> = new Map()
   private _mode: SubtitleMode = 'bilingual'
+  private _style: SubtitleStyleConfig = { ...DEFAULT_SUBTITLE_STYLE }
   private static _styleInjected = false
 
   constructor(config: SubtitleRendererConfig) {
     this._maxLines = config.maxLines ?? 6
+    this._style = config.style ? { ...config.style } : { ...DEFAULT_SUBTITLE_STYLE }
 
     if (!SubtitleRenderer._styleInjected) {
       SubtitleRenderer._injectStyles()
@@ -41,6 +48,7 @@ export class SubtitleRenderer {
       font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
     `
 
+    this._applyStyle()
     config.container.appendChild(this._overlay)
   }
 
@@ -48,17 +56,66 @@ export class SubtitleRenderer {
     this._mode = mode
   }
 
+  setStyle(style: SubtitleStyleConfig): void {
+    this._style = { ...style }
+    this._applyStyle()
+  }
+
+  private _applyStyle(): void {
+    this._overlay.style.setProperty('--subtitle-font-size', `${this._style.fontSize}px`)
+    this._overlay.style.setProperty('--subtitle-font-color', this._style.fontColor)
+    this._overlay.style.setProperty(
+      '--subtitle-background',
+      toRgba(this._style.backgroundColor, this._style.backgroundOpacity),
+    )
+    this._overlay.style.setProperty('--subtitle-position', this._style.position)
+
+    const positionMap = { bottom: '12%', middle: '45%', top: '10%' } as const
+    this._overlay.style.bottom = positionMap[this._style.position]
+    this._overlay.style.top = this._style.position === 'top' ? positionMap.top : 'auto'
+  }
+
   render(entry: SubtitleEntry): void {
+    const signature = contentSignature(entry, this._mode)
     const existing = this._entries.get(entry.segmentId)
-    if (existing) {
-      this._updateText(existing, entry)
-    } else {
+    if (!existing) {
       const element = this._createSubtitleElement(entry)
       this._overlay.appendChild(element)
       this._entries.set(entry.segmentId, element)
+      this._renderedContent.set(entry.segmentId, signature)
+    } else if (this._renderedContent.get(entry.segmentId) !== signature) {
+      this._updateText(existing, entry)
+      this._renderedContent.set(entry.segmentId, signature)
     }
 
     this._trim()
+  }
+
+  /**
+   * 第二梯队-方向 3：单一数据流入口。
+   *
+   * 从字幕 Store 的可见快照一次性做 DOM 对账（新增/更新/移除），
+   * 避免调用方在每次消息到达时全量重绘所有字幕。仅更新内容发生变化的条目。
+   */
+  syncFromStore(store: SubtitleStore): void {
+    const { visible } = store.getSnapshot()
+    const visibleIds = new Set<string>()
+
+    for (const entry of visible) {
+      visibleIds.add(entry.segmentId)
+      this.render(entry)
+    }
+
+    // 移除已不在可见列表中的 DOM 条目（滚出/被清理）。
+    const staleIds = Array.from(this._entries.keys()).filter((id) => !visibleIds.has(id))
+    for (const id of staleIds) {
+      const element = this._entries.get(id)
+      if (element) {
+        element.remove()
+      }
+      this._entries.delete(id)
+      this._renderedContent.delete(id)
+    }
   }
 
   revise(segmentId: string, newText: string): void {
@@ -84,6 +141,7 @@ export class SubtitleRenderer {
 
   reset(): void {
     this._entries.clear()
+    this._renderedContent.clear()
     this._overlay.innerHTML = ''
   }
 
@@ -203,7 +261,7 @@ export class SubtitleRenderer {
         min-width: 0;
         padding: 10px 14px;
         border-radius: 14px;
-        background: rgba(6, 10, 16, 0.78);
+        background: var(--subtitle-background, rgba(6, 10, 16, 0.78));
         border: 1px solid rgba(255, 255, 255, 0.08);
         box-shadow: 0 16px 40px rgba(0, 0, 0, 0.22);
         text-align: center;
@@ -212,7 +270,7 @@ export class SubtitleRenderer {
 
       .subtitle-source {
         color: rgba(226, 234, 245, 0.8);
-        font-size: 15px;
+        font-size: max(13px, calc(var(--subtitle-font-size, 22px) - 6px));
         line-height: 1.4;
         word-break: break-word;
       }
@@ -227,20 +285,20 @@ export class SubtitleRenderer {
       }
 
       .subtitle-translated {
-        color: #ffffff;
-        font-size: 21px;
+        color: var(--subtitle-font-color, #ffffff);
+        font-size: var(--subtitle-font-size, 22px);
         font-weight: 600;
         line-height: 1.45;
         word-break: break-word;
       }
 
       .subtitle-entry.only-source .subtitle-source {
-        font-size: 20px;
-        color: #ffffff;
+        font-size: var(--subtitle-font-size, 22px);
+        color: var(--subtitle-font-color, #ffffff);
       }
 
       .subtitle-entry.only-translated .subtitle-translated {
-        font-size: 22px;
+        font-size: calc(var(--subtitle-font-size, 22px) + 2px);
       }
 
       .subtitle-cursor {
@@ -256,4 +314,31 @@ export class SubtitleRenderer {
     `
     document.head.appendChild(style)
   }
+}
+
+
+function toRgba(hexColor: string, opacity: number): string {
+  const normalizedHex = hexColor.replace('#', '')
+  const red = parseInt(normalizedHex.slice(0, 2), 16)
+  const green = parseInt(normalizedHex.slice(2, 4), 16)
+  const blue = parseInt(normalizedHex.slice(4, 6), 16)
+  if ([red, green, blue].some((channel) => Number.isNaN(channel))) {
+    return 'rgba(10, 14, 22, 0.78)'
+  }
+  return `rgba(${red}, ${green}, ${blue}, ${Math.min(1, Math.max(0, opacity)).toFixed(2)})`
+}
+
+/**
+ * 计算条目在给定显示模式下的渲染内容签名，用于跳过未变化条目的 DOM 写入。
+ *
+ * 包含：说话人、原文、译文、是否 partial（光标显隐）。
+ */
+function contentSignature(entry: SubtitleEntry, mode: SubtitleMode): string {
+  return [
+    entry.speaker ?? '',
+    entry.sourceText,
+    entry.translatedText,
+    entry.isPartial ? 'p' : 'f',
+    mode,
+  ].join('\u0001')
 }

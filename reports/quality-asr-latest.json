@@ -1,0 +1,8 @@
+{
+  "source": "tests/fixtures/quality/asr-pairs.csv",
+  "pairs": 11,
+  "wer": 0.05405405405405406,
+  "cer": 0.02119460500963391,
+  "word_accuracy": 0.9459459459459459,
+  "character_accuracy": 0.9788053949903661
+}

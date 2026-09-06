@@ -60,7 +60,7 @@ def frontend_origin_from_url(frontend_url: str) -> str:
     return f"{parsed.scheme}://{parsed.hostname}"
 DESKTOP_ASR_PROFILE_ENV = "AI_INTERPRETER_DESKTOP_ASR_PROFILE"
 WS_URL_QUERY_PARAM = "wsUrl"
-LAUNCH_MODES = {"desktop", "web"}
+LAUNCH_MODES = {"desktop", "web", "tauri"}
 SUPPORTED_UI_LANGUAGES = {"zh-CN", "en-US"}
 SUPPORTED_TRANSLATION_ENGINES = {"claude", "openai"}
 SUPPORTED_SOURCE_LANGUAGES = {"auto", "en", "ja", "ko", "es", "fr", "de"}
@@ -668,6 +668,50 @@ def ensure_desktop_runtime() -> Path:
     raise LauncherError("Electron runtime is missing after npm install")
 
 
+def tauri_command() -> str:
+    if sys.platform == "win32":
+        return str(FRONTEND_DIR / "node_modules" / ".bin" / "tauri.cmd")
+    return str(FRONTEND_DIR / "node_modules" / ".bin" / "tauri")
+
+
+def launch_tauri_window(url: str, backend_ws_url: str) -> subprocess.Popen[str]:
+    """启动 Tauri 桌面窗口（需先 npm install 安装 @tauri-apps/cli）。
+
+    Tauri 开发模式通过 `tauri dev` 运行，会先执行 beforeDevCommand（npm run dev）
+    再打开 WebView。这里以 dev 模式启动并注入 wsUrl 查询参数，
+    让前端通过后端实际端口建立翻译/终端 WebSocket。
+    """
+    executable = tauri_command()
+    if not Path(executable).exists():
+        raise LauncherError(
+            "Tauri CLI is missing. Run `npm install` in frontend/ first."
+        )
+
+    env = os.environ.copy()
+    env["AI_INTERPRETER_TAURI_WS_URL"] = backend_ws_url
+    write_log(f"Tauri backend WebSocket URL: {backend_ws_url}")
+
+    command = [executable, "dev"]
+    write_log(f"Launching Tauri desktop window: {' '.join(command)}")
+    process = subprocess.Popen(
+        command,
+        cwd=FRONTEND_DIR,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        creationflags=CREATE_NO_WINDOW,
+    )
+    threading.Thread(
+        target=stream_process_output,
+        args=(process, "tauri"),
+        daemon=True,
+    ).start()
+    return process
+
+
 def launch_desktop_window(url: str, backend_ws_url: str) -> subprocess.Popen[str]:
     electron_executable = ensure_desktop_runtime()
     if not ELECTRON_MAIN.exists():
@@ -743,7 +787,10 @@ def parse_args() -> argparse.Namespace:
         "--mode",
         choices=sorted(LAUNCH_MODES),
         default="desktop",
-        help="Launch surface: desktop opens Electron, web opens the default browser",
+        help=(
+            "Launch surface: desktop opens Electron, web opens the default "
+            "browser, tauri opens the Tauri native window"
+        ),
     )
     parser.add_argument(
         "--build",
@@ -822,6 +869,12 @@ def main() -> int:
             app_url = launch_web_browser(frontend_url, backend_ws_url)
             splash.close()
             wait_for_web_session(app_url)
+            return 0
+
+        if args.mode == "tauri":
+            desktop_process = launch_tauri_window(frontend_url, backend_ws_url)
+            splash.close()
+            desktop_process.wait()
             return 0
 
         desktop_process = launch_desktop_window(frontend_url, backend_ws_url)

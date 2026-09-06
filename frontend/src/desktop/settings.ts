@@ -1,11 +1,17 @@
 import { getDesktopBridge } from './overlay'
+import {
+  readTauriDesktopSettings,
+  saveTauriDesktopSettings,
+} from './tauri'
 import { getRuntimeWebSocketUrlFromSearch } from '../network/ws-url'
+import { DEFAULT_SUBTITLE_STYLE, normalizeSubtitleStyle } from '../subtitle/subtitle-style'
 import type {
   DesktopAsrProfile,
   DesktopSettingsSaveResult,
   DesktopSettingsSnapshot,
   DesktopSettingsUpdate,
   SourceLanguage,
+  TargetLanguage,
   TranslationEngine,
   UiLanguage,
 } from '../types'
@@ -31,7 +37,9 @@ export const DEFAULT_DESKTOP_SETTINGS: DesktopSettingsSnapshot = {
   runtime: {
     asrProfile: 'remote',
     sourceLanguage: 'en',
+    targetLanguage: 'zh-CN',
   },
+  subtitleStyle: { ...DEFAULT_SUBTITLE_STYLE },
 }
 
 
@@ -50,6 +58,7 @@ export function createUnavailableDesktopSettings(): DesktopSettingsSnapshot {
     translation: { ...DEFAULT_DESKTOP_SETTINGS.translation },
     asr: { ...DEFAULT_DESKTOP_SETTINGS.asr },
     runtime: { ...DEFAULT_DESKTOP_SETTINGS.runtime },
+    subtitleStyle: { ...DEFAULT_DESKTOP_SETTINGS.subtitleStyle },
   }
 }
 
@@ -57,6 +66,11 @@ export function createUnavailableDesktopSettings(): DesktopSettingsSnapshot {
 export async function loadDesktopSettings(): Promise<DesktopSettingsSnapshot> {
   const bridge = getDesktopBridge()
   if (!bridge?.getSettings) {
+    // Tauri 环境下优先走 Tauri 命令；否则回退浏览器 API
+    const tauriSettings = await loadTauriSettingsIfAvailable()
+    if (tauriSettings) {
+      return tauriSettings
+    }
     return loadBrowserLocalSettings()
   }
 
@@ -75,6 +89,10 @@ export async function saveDesktopSettings(
 ): Promise<DesktopSettingsSaveResult> {
   const bridge = getDesktopBridge()
   if (!bridge?.saveSettings) {
+    const tauriResult = await saveTauriSettingsIfAvailable(update)
+    if (tauriResult) {
+      return tauriResult
+    }
     return saveBrowserLocalSettings(update)
   }
 
@@ -199,6 +217,7 @@ export function sanitizeDesktopSettingsSnapshot(
   const translation = isRecord(value.translation) ? value.translation : {}
   const asr = isRecord(value.asr) ? value.asr : {}
   const runtime = isRecord(value.runtime) ? value.runtime : {}
+  const subtitleStyle = normalizeSubtitleStyle(value.subtitleStyle)
 
   return {
     available: value.available === true,
@@ -234,7 +253,12 @@ export function sanitizeDesktopSettingsSnapshot(
         runtime.sourceLanguage,
         DEFAULT_DESKTOP_SETTINGS.runtime.sourceLanguage,
       ),
+      targetLanguage: pickTargetLanguage(
+        runtime.targetLanguage,
+        DEFAULT_DESKTOP_SETTINGS.runtime.targetLanguage,
+      ),
     },
+    subtitleStyle,
   }
 }
 
@@ -316,6 +340,26 @@ function pickSourceLanguage(
 ): SourceLanguage {
   switch (value) {
     case 'auto':
+    case 'zh-CN':
+    case 'en':
+    case 'ja':
+    case 'ko':
+    case 'es':
+    case 'fr':
+    case 'de':
+      return value
+    default:
+      return fallback
+  }
+}
+
+
+function pickTargetLanguage(
+  value: unknown,
+  fallback: TargetLanguage,
+): TargetLanguage {
+  switch (value) {
+    case 'zh-CN':
     case 'en':
     case 'ja':
     case 'ko':
@@ -331,4 +375,36 @@ function pickSourceLanguage(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value))
+}
+
+
+/**
+ * Tauri 环境下读取设置；不可用返回 null（调用方回退浏览器 API）。
+ */
+async function loadTauriSettingsIfAvailable(): Promise<DesktopSettingsSnapshot | null> {
+  const raw = await readTauriDesktopSettings()
+  if (!raw) {
+    return null
+  }
+  return sanitizeDesktopSettingsSnapshot(raw)
+}
+
+
+/**
+ * Tauri 环境下保存设置；不可用返回 null（调用方回退浏览器 API）。
+ */
+async function saveTauriSettingsIfAvailable(
+  update: DesktopSettingsUpdate,
+): Promise<DesktopSettingsSaveResult | null> {
+  const result = await saveTauriDesktopSettings(update)
+  if (!result) {
+    return null
+  }
+  if (result.success && result.settings) {
+    return {
+      ...result,
+      settings: sanitizeDesktopSettingsSnapshot(result.settings),
+    }
+  }
+  return result
 }

@@ -1,4 +1,8 @@
-import type { SubtitleEntry, SubtitleMode } from '../types'
+import type { SubtitleEntry, SubtitleMode, SubtitlePosition } from '../types'
+import {
+  buildSubtitleStyleVarMap,
+  normalizeSubtitleStyle,
+} from '../subtitle/subtitle-style'
 import {
   createDesktopOverlaySnapshot,
   getSubtitleDisplayState,
@@ -55,6 +59,13 @@ type StateListener = (state: WebOverlayState) => void
 type SnapshotListener = (snapshot: DesktopOverlaySnapshot) => void
 
 
+const POSITION_ALIGN: Record<SubtitlePosition, string> = {
+  bottom: 'flex-end',
+  middle: 'center',
+  top: 'flex-start',
+}
+
+
 const WEB_OVERLAY_CHANNEL_NAME = 'ai-interpreter:web-subtitle-overlay'
 const WEB_OVERLAY_STORAGE_KEY = 'ai-interpreter:web-subtitle-overlay:latest'
 const WEB_OVERLAY_WINDOW_NAME = 'ai-interpreter-web-subtitle-overlay'
@@ -92,7 +103,7 @@ body {
   position: fixed;
   inset: 0;
   display: flex;
-  align-items: flex-end;
+  align-items: var(--subtitle-align, flex-end);
   justify-content: center;
   padding: 0 28px 28px;
   pointer-events: none;
@@ -115,34 +126,34 @@ body {
   padding: 10px 14px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 14px;
-  background: rgba(4, 7, 11, 0.82);
+  background: var(--subtitle-background, rgba(4, 7, 11, 0.82));
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.34);
   text-align: center;
 }
 
 .desktop-subtitle-source {
   color: rgba(226, 234, 245, 0.84);
-  font-size: 15px;
+  font-size: max(13px, calc(var(--subtitle-font-size, 24px) - 6px));
   line-height: 1.4;
   word-break: break-word;
 }
 
 .desktop-subtitle-translated {
-  color: #ffffff;
-  font-size: 24px;
+  color: var(--subtitle-font-color, #ffffff);
+  font-size: var(--subtitle-font-size, 24px);
   font-weight: 700;
   line-height: 1.4;
   word-break: break-word;
 }
 
 .desktop-subtitle-entry.only-source .desktop-subtitle-source {
-  color: #ffffff;
-  font-size: 22px;
+  color: var(--subtitle-font-color, #ffffff);
+  font-size: var(--subtitle-font-size, 24px);
   font-weight: 650;
 }
 
 .desktop-subtitle-entry.only-translated .desktop-subtitle-translated {
-  font-size: 26px;
+  font-size: calc(var(--subtitle-font-size, 24px) + 2px);
 }
 
 .desktop-subtitle-entry.revised {
@@ -286,6 +297,7 @@ export class WebFloatingSubtitleOverlay {
   private _transport: WebOverlayTransport | null = null
   private _lastSnapshot: DesktopOverlaySnapshot = INITIAL_SNAPSHOT
   private _pipStackElement: HTMLElement | null = null
+  private _pipShellElement: HTMLElement | null = null
   private _closePollId: number | null = null
   private _broadcastChannel: BroadcastChannel | null = null
 
@@ -362,6 +374,7 @@ export class WebFloatingSubtitleOverlay {
     this._floatingWindow = null
     this._transport = null
     this._pipStackElement = null
+    this._pipShellElement = null
     clearStoredSnapshot(this._hostWindow)
     this._updateState({
       available: true,
@@ -451,6 +464,7 @@ export class WebFloatingSubtitleOverlay {
     targetDocument.body.appendChild(root)
 
     this._pipStackElement = stack
+    this._pipShellElement = shell
   }
 
   private _renderPictureInPictureSnapshot(snapshot: DesktopOverlaySnapshot): void {
@@ -464,6 +478,12 @@ export class WebFloatingSubtitleOverlay {
       createSubtitleEntryElement(entry, snapshot.mode, targetDocument),
     )
     stack.replaceChildren(...nodes)
+
+    const style = normalizeSubtitleStyle(snapshot.style)
+    applyCssVarMap(stack, buildSubtitleStyleVarMap(style))
+    if (this._pipShellElement) {
+      this._pipShellElement.style.setProperty('--subtitle-align', POSITION_ALIGN[style.position])
+    }
   }
 
   private _listenForClose(targetWindow: Window): void {
@@ -474,6 +494,7 @@ export class WebFloatingSubtitleOverlay {
       this._floatingWindow = null
       this._transport = null
       this._pipStackElement = null
+      this._pipShellElement = null
       this._stopClosePolling()
       clearStoredSnapshot(this._hostWindow)
       this._updateState({
@@ -508,6 +529,7 @@ export class WebFloatingSubtitleOverlay {
     this._floatingWindow = null
     this._transport = null
     this._pipStackElement = null
+    this._pipShellElement = null
     this._updateState({
       available: true,
       visible: false,
@@ -635,6 +657,13 @@ function parseSnapshotMessage(raw: string): WebOverlaySnapshotMessage | null {
   } catch {
     return null
   }
+}
+
+
+function applyCssVarMap(element: HTMLElement, vars: Record<string, string>): void {
+  Object.entries(vars).forEach(([key, value]) => {
+    element.style.setProperty(key, value)
+  })
 }
 
 
