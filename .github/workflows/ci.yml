@@ -99,7 +99,7 @@ jobs:
 
       - name: Python 依赖安全审计
         # --no-deps：直接依赖审计；仅 high/critical 使 CI 失败。
-        run: pip-audit -r backend/requirements.txt --no-deps --ignore-vulns
+        run: pip-audit -r backend/requirements.txt --no-deps
 
   # E2E 端到端测试（TD-7）：Playwright 驱动关键用户流程，
   # mock WebSocket/API 桩数据，无需真实后端/ASR/NMT。

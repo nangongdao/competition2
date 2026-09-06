@@ -215,16 +215,20 @@ class TTSServiceTests(unittest.TestCase):
                     self.assertEqual(mock_edge2.call_count, 0)
 
     def test_disk_cache_disabled_when_dir_empty(self) -> None:
+        fake_mp3 = b"\x49\x44\x33fake-mp3-bytes"
         with (
             patch("core.config.settings.tts_engine", "edge"),
             patch("core.config.settings.tts_cache_dir", ""),
+            patch.object(TTSService, "_synthesize_edge", return_value=fake_mp3),
         ):
             service = TTSService()
             self.assertIsNone(service._cache_dir)
 
             async def scenario() -> None:
                 audio = await service.synthesize("测试", language="zh-CN")
-                self.assertEqual(audio, b"")
+                # 磁盘缓存目录不可用仅禁用持久化，不改变合成行为
+                self.assertEqual(audio, fake_mp3)
+                self.assertEqual(service.diagnostics["diskHits"], 0)
 
             run(scenario())
 
