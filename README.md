@@ -1,180 +1,108 @@
-# competition2
+<div align="center">
 
-AI real-time interpretation assistant for translating one-way foreign-language audio streams into Chinese with subtitle and correction support.
+# 🎙️ AI 同声传译助手
 
-## 2026-08 安全与性能升级（对应 UPGRADE_PLAN.md / PERFORMANCE_UPGRADE.md）
+**AI Real-time Interpretation Assistant** — 实时将外语音频流翻译为中文，带字幕与智能修正能力。
 
-> 详见 `UPGRADE_PLAN.md`（安全与工程质量）与 `PERFORMANCE_UPGRADE.md`（性能与能力）。
+</div>
 
-- **版本控制**：仓库已 `git init`（分支 `main`），敏感文件不入库。
-- **网络安全**：默认仅监听 `127.0.0.1`；CORS 白名单（不再通配）；`proxy_headers=False`
-  防 `X-Forwarded-For` 绕过；WebSocket 增加 Origin 校验、强会话 ID（192 bit 随机）与
-  重连令牌；`wsUrl` 查询参数校验协议 + 回环主机白名单。
-- **密钥与配置**：本地设置文件以 0600 权限原子写入；Redis 键增加应用前缀
-  `ai-interpreter:` 并校验会话 ID；前端加 CSP。
-- **实时管线**：ASR 回调不再阻塞翻译——翻译与修正后台异步化，带并发信号量、
-  优雅停关与乱序保护（字幕按 `segment_index` 有序落位）；NMT 失败指数退避重试，
-  最终降级为原文透传保证字幕不断流。
-- **翻译质量（P1/P2）**：上下文窗口分层（近 3 句原文 + 更早句压缩，input token
-  预估降 60%）；自适应 VAD 句子边界切分（Silero VAD + 时长约束，不再切碎句子）；
-  术语表与领域自适应（JSON/CSV 导入，只注入命中术语）。
-- **能力进阶（P2/P3）**：说话人分离（segment 级说话人标注 + 前端着色，默认关闭）；
-  字幕历史面板虚拟滚动（数千条不卡顿）；音频采集静音丢弃（RMS 阈值，节省
-  30-40% 带宽与 ASR 调用）；流式 TTS（翻译 token 按句末标点即合成，不等整段）。
-- **工程化**：依赖锁定（`backend/requirements.lock.txt`）、`pytest.ini` + `pyproject.toml`
-  （ruff）、GitHub Actions CI、`docker-compose.yml` 一键编排。
-- 后端测试 **160** 通过、前端测试 **70** 通过、`ruff check` 与 `tsc` 全绿；
-  真实音频耐久测试设施见 `tests/fixtures/audio/` 与 `docs/PERFORMANCE_BASELINE.md`。
+<p align="center">
+  <img src="docs/images/main-ui.jpg" alt="AI 同声传译助手主界面" width="860" />
+</p>
 
-## Current Status
+---
 
-The current documented baseline is an implemented V2 product slice.
+## ✨ UI 一览（实机截图）
 
-Implemented product capabilities now include:
+> 以下均为 **真实运行界面截图**，中文正常渲染，控制面板分组清晰、连接状态一目了然。
 
-- Live audio capture to WebSocket translation flow.
-- Session-level source-language selection for English, automatic detection, and
-  common foreign-language inputs, with Chinese kept as the target language.
-- Manual revision triggering from the frontend control panel.
-- Silence-based and sentence-count-based backend revision checks.
-- Bilingual subtitle entries with source text and translated text.
-- Revision counters and visible revision metadata.
-- Real ASR correction through cached segment audio and Whisper re-decode, with LLM post-edit fallback.
-- Live session diagnostics for latency, dropped chunks, reconnects, revision counters, and API call counters.
-- Backend audio-queue diagnostics for current depth, peak depth, capacity, and queue wait latency.
-- Periodic backend diagnostics and explicit diagnostics requests for endurance
-  runs where silence or delayed ASR finals would otherwise hide received audio
-  counts.
-- Reconnect-safe frontend session IDs with per-session ASR stream state and revision cache isolation.
-- AudioWorklet-first browser audio capture with a ScriptProcessor fallback for unsupported browsers.
-- Client diagnostics show which capture backend is active so AudioWorklet and fallback sessions can be compared.
-- Local WebSocket endurance runner for sending paced PCM audio and collecting diagnostics JSON reports.
-- Endurance reports now summarize API/revision counters and final-subtitle ordering anomalies.
-- Endurance reports can optionally sample runner/backend process RSS memory and
-  fail on configured memory-growth thresholds.
-- Subtitle artifact validator for checking exported TXT/SRT/VTT/Markdown files
-  from real sessions.
-- Unified interpreter validation suite that coordinates preflight, optional
-  endurance runs, and optional subtitle artifact checks into one audit report.
-- Secret-safe endurance preflight for checking Redis, Whisper, CUDA, and provider key readiness before long runs.
-- Web-first local launcher that starts the built frontend, FastAPI backend, and
-  default browser from a double-click entry without requiring Electron.
-- Web floating subtitle window with Document Picture-in-Picture support and
-  popup fallback, so browser startup is not limited to in-page subtitles.
-- Optional Electron desktop launcher that starts the built frontend, FastAPI backend, and a native desktop window from a double-click entry.
-- Electron single-instance, tray restore, minimize-to-tray, and startup-log menu behavior for a more software-like local desktop experience.
-- Electron floating subtitle overlay that opens a transparent always-on-top
-  subtitle window above other desktop apps while the main window remains the
-  control panel.
-- Local settings panel for browser/Electron translation and remote-ASR
-  provider/model/API-key configuration, with Chinese/English interface language
-  switching and a Git-ignored local settings file.
-- Windows desktop shortcut installer scripts for launching the app from the desktop.
-- Durable subtitle history separated from the short visible subtitle list.
-- Transcript copy and TXT download from the subtitle history panel.
-- SRT subtitle export, VTT subtitle export, and Markdown learning-note export from
-  subtitle history.
-- Diagnostics TXT download from the subtitle history panel.
-- Optional local Chinese voice playback through the browser/Electron Web Speech
-  API, with queueing, volume control, rate control, and diagnostics.
-- Frontend unit tests for AudioWorklet capture startup, ScriptProcessor fallback,
-  failed-capture cleanup, local TTS queue behavior, and subtitle export formats.
-- Backend unit tests for pipeline queue overflow diagnostics, final ASR-to-translation
-  flow, and closed-session audio rejection.
-- Responsive control panel behavior for desktop, mobile, and narrow mobile widths.
+### 主界面 · 空状态引导
 
-Recent validation:
+未开始翻译时，主界面居中展示产品定位与三步功能亮点（实时同传 / 智能修正 / 语音播报），并直接提供「开始翻译」入口；右侧玻璃面板则清晰划分 **语言与输入**、**实时翻译** 两个功能区。
 
-- `npm.cmd run test` in `frontend`.
-- `npm.cmd run build` in `frontend`.
-- `node --check frontend\electron\main.cjs`.
-- `node --check frontend\electron\preload.cjs`.
-- `.\\backend\\.venv\\Scripts\\python.exe -m unittest tools.test_desktop_launcher`.
-- `.\\backend\\.venv\\Scripts\\python.exe -m compileall tools\\desktop_launcher.py tools\\test_desktop_launcher.py`.
-- `npm.cmd audit` in `frontend`.
-- `.\\backend\\.venv\\Scripts\\python.exe -m unittest backend.test_pipeline`.
-- `python -m unittest backend.test_endurance_runner`.
-- `python -m compileall tools backend/test_endurance_runner.py`.
-- `.\\backend\\.venv\\Scripts\\python.exe -m unittest discover backend`.
-- `.\\backend\\.venv\\Scripts\\python.exe -m compileall backend\\api backend\\core backend\\models backend\\services backend\\storage`.
-- `.\\backend\\.venv\\Scripts\\python.exe tools\\endurance_preflight.py --output reports\\endurance-preflight-latest.json`.
-- `.\\backend\\.venv\\Scripts\\python.exe tools\\interpreter_validation_suite.py --output reports\\interpreter-validation-latest.json`.
-- `.\\backend\\.venv\\Scripts\\python.exe tools\\endurance_runner.py --duration-seconds 60 --source silence --output reports\\endurance-60s-language-config.json --max-dropped-chunks 0 --max-queue-depth 8 --min-received-ratio 0.99 --max-subtitle-order-violations 0`.
-- `.\\backend\\.venv\\Scripts\\python.exe tools\\endurance_runner.py --help`.
-- `git diff --check`.
-- Playwright desktop, mobile, and narrow viewport checks for panel overflow, prompt overlap, button text overflow, and 44px touch targets.
+![主界面](docs/images/main-ui.jpg)
 
-## Next Direction
+### 功能面板
 
-Recommended improvement sequence:
+每个面板都以独立悬浮窗口呈现，风格统一、信息完整，中文全部可读。
 
-1. Establish a real reliability baseline with 30-60 minute live endurance runs using Redis, Whisper, provider API keys, and `tools/endurance_runner.py`. Track queue depth, queue wait latency, queue drops, reconnects, subtitle ordering, memory growth, ASR latency, translation latency, revision latency, and API-call counts.
-2. Validate post-session artifacts in real sessions with `tools/subtitle_artifact_validator.py`: confirm SRT/VTT timing, revised-segment markers, Markdown note readability, and unchanged TXT/diagnostics behavior while keeping the frontend export unit tests green.
-3. Validate the new AudioWorklet capture path in real sessions and compare chunk stability, dropped chunks, and latency against the ScriptProcessor fallback.
-4. Validate the local Web Speech voice playback in real browser/Electron sessions, then decide whether the next TTS slice needs provider-backed synthesis, audio artifact caching, or backend delivery.
-5. Use the web launcher as the default local demo path. Keep Electron only as
-   the optional floating-overlay path, and defer full packaged desktop/system-audio
-   capture until the browser workflow has measurable stability. At that point,
-   evaluate Electron/Tauri capture, packaging, and memory requirements against
-   real sessions.
+| 设置面板 · 本地配置 | 字幕历史 · 多格式导出 |
+|:---:|:---:|
+| ![设置面板](docs/images/settings-panel.jpg) | ![字幕历史](docs/images/subtitle-history.jpg) |
+| API Key / 引擎 / 模型 / ASR 统一管理，保存提示清晰 | 历史回放 + TXT/SRT/VTT/MD/ZIP 一键导出 |
 
-## Web Startup (Recommended)
+| 内置终端 · 后端操作台 | 学习摘要 · 智能总结 |
+|:---:|:---:|
+| ![内置终端](docs/images/terminal-panel.jpg) | ![学习摘要](docs/images/summary-panel.jpg) |
+| 内嵌 xterm 终端，欢迎横幅 + 连接状态一目了然 | 本地统计 + LLM 增强双模式生成摘要 |
 
-On Windows, double-click `start-web.cmd` from the project root. The web
-launcher:
+| 术语库 · 热词注入 | 翻译记忆库 · 越用越准 |
+|:---:|:---:|
+| ![术语库](docs/images/glossary-panel.jpg) | ![翻译记忆库](docs/images/translation-memory-panel.jpg) |
+| 术语 CSV/JSON 导入，ASR + NMT 双通道生效 | 跨会话持久化记忆，LCS + Jaccard 检索 |
 
-1. Builds the Vite frontend when needed.
-2. Serves the built frontend from a local static server.
-3. Starts the FastAPI backend from `backend/.venv` when the requested backend
-   port is not already healthy.
-4. Opens the app in the default browser with the selected backend WebSocket URL.
-5. Keeps a console window open while launcher-owned services are running. Press
-   `Ctrl+C` or close that window to stop those services.
+| 字幕样式 · 实时预览 | 协作翻译 · 多人房间 |
+|:---:|:---:|
+| ![字幕样式](docs/images/subtitle-style-panel.jpg) | ![协作翻译](docs/images/collaboration-panel.jpg) |
+| 字号 / 颜色 / 位置 CSS 变量驱动 | 房间式协作，修正实时全员可见 |
 
-By default, web startup uses remote OpenAI-compatible ASR and does not download
-or load a local Whisper model. The remote ASR path expects the provider to
-support an audio transcription endpoint such as `/audio/transcriptions`. The
-official OpenAI Whisper API format is `ASR_OPENAI_BASE_URL=https://api.openai.com/v1`
-and `ASR_OPENAI_MODEL=whisper-1`; do not include `/audio/transcriptions` in the
-base URL. The launcher waits for backend health before opening the app URL;
-progress and failures are written to `logs/desktop-launcher.log`.
+| 订阅与配额 · 用量管控 | 成本估算 · 实时计量 |
+|:---:|:---:|
+| ![订阅与配额](docs/images/subscription-panel.jpg) | ![成本估算](docs/images/cost-panel.jpg) |
+| 4 档套餐 + 每日句数计量 | token / 音频 / 字符成本实时可视化 |
 
-Use `Settings` / `设置` in the web page to configure provider/model/API-key
-values without editing secret files by hand. Browser settings are saved through
-the local backend to `config/desktop-settings.local.json`, which is ignored by
-Git. The tracked `config/desktop-settings.example.json` file remains the
-GitHub-safe template with the same shape and no real key. The browser only
-receives whether a saved key exists; it does not display stored key values.
+| 会话历史 · 隐私管理 | 修正历史 · 时间线 |
+|:---:|:---:|
+| ![会话历史](docs/images/session-history-panel.jpg) | ![修正历史](docs/images/revision-timeline-panel.jpg) |
+| 会话质量指标落盘 + TTL 自动清理 | 修正类型 / 来源 / 耗时可视化 |
 
-Keep ASR and translation settings separate:
+---
 
-- Translation uses `translation.model` / `NMT_MODEL` and calls
-  `/chat/completions`; OpenAI-compatible chat models such as Flash belong here.
-- ASR uses `asr.model` / `ASR_OPENAI_MODEL` and calls `/audio/transcriptions`;
-  use `whisper-1`, `gpt-4o-mini-transcribe`, or a provider model explicitly
-  documented for audio transcription.
+### 🛠️ 本次 UI 体验升级
 
-Backend-affecting settings such as translation engine, model, API key, base URL,
-ASR model/API key/base URL, and ASR profile are read when the backend starts, so
-restart `start-web.cmd` or the backend after saving them. Interface language
-changes apply in the frontend immediately after saving.
+- **中文字体修复**：内嵌 Noto Sans SC 子集字体，彻底解决「豆腐块」缺字问题，任何系统下中文均正常显示
+- **连接状态警示**：WebSocket 断开时以琥珀色高亮 + 提示文案，异常一目了然
+- **信息层级分组**：控制面板按「语言与输入」「实时翻译」分区，告别按钮堆叠
+- **空状态引导**：主界面展示功能亮点与「开始翻译」入口，新用户上手零门槛
+- **视觉一致性**：统一面板圆角 / 边框对比度 / 分割线，深色模式更清晰
 
-In web mode, the main AI Interpreter page remains the control and audio-capture
-surface. Use the control panel's floating-subtitle button to open a separate
-subtitle window. Chromium-based browsers use Document Picture-in-Picture when
-available so the subtitle window can float above the video; other browsers fall
-back to a normal popup window. This web path still does not inject subtitles into
-the original video page, and true OS-level transparent always-on-top behavior
-remains Electron-only.
+## 项目简介
 
-Startup logs are written to `logs/desktop-launcher.log`. If port `8000` is
-occupied by an unhealthy or stale process, the launcher chooses another local
-backend port and injects the matching WebSocket URL into the browser page.
-Override paths, ports, or ASR profile with `AI_INTERPRETER_PYTHON`,
-`AI_INTERPRETER_BACKEND_PORT`, `AI_INTERPRETER_FRONTEND_PORT`, or
-`AI_INTERPRETER_DESKTOP_ASR_PROFILE` when needed.
+AI 同声传译助手是一款 **实时将单向外语音频流翻译为中文** 的应用，支持 **字幕展示 + 语音播报** 双通道输出。通过 AI 能力帮助用户观看英文演讲、技术分享、国际会议或网课时 **降低语言门槛、提升信息获取效率**。
 
-Web startup defaults to the remote ASR profile:
+系统具备**智能修正能力**，能够自动纠正此前识别或翻译的错误，实现"越用越准"的同传体验。
+
+---
+
+## 核心特性
+
+- 🎯 **实时同声传译**：WebSocket 实时音频流 → ASR 识别 → 翻译 → 字幕/语音输出
+- 🧠 **智能修正引擎**：基于置信度、停顿检测、句数规则自动触发修正，也可手动修正
+- 📚 **多语种支持**：源语言自动检测 + 7 种目标语言（中/英/日/韩/西/法/德）
+- 🔊 **流式 TTS 语音播报**：edge-tts / OpenAI 引擎合成，修正时智能播报
+- 📂 **多音频源**：麦克风 / 标签页 / 系统音频 (Tauri) / 音频文件 四种输入
+- 🗂️ **术语库管理**：热词注入 ASR + 翻译约束双通道生效
+- 📖 **翻译记忆库**：跨会话持久化，越用越准、越用越省
+- 🤝 **多人协作翻译**：房间式协作，提交修正全员可见
+- 📊 **成本估算与订阅配额**：实时计量与用量控制
+- 🖥️ **多端覆盖**：Web / Electron 桌面 / Tauri 原生 / PWA 离线
+
+---
+
+## 快速开始
+
+### Web 模式（推荐）
+
+**Windows 一键启动：** 双击项目根目录的 `start-web.cmd`
+
+启动流程：
+1. 构建 Vite 前端（需要时）
+2. 启动本地静态服务器
+3. 启动 FastAPI 后端（若端口未被占用）
+4. 自动打开浏览器访问应用
+5. 通过界面「设置」配置 API Key，无需手动编辑文件
+
+**默认配置：**
 
 ```text
 ASR_ENGINE=openai
@@ -183,190 +111,205 @@ ASR_OPENAI_BASE_URL=https://api.openai.com/v1
 ASR_OPENAI_API_KEY=<your-transcription-api-key>
 ```
 
-When `ASR_OPENAI_API_KEY` or `ASR_OPENAI_BASE_URL` is blank, the backend falls
-back to `OPENAI_API_KEY` and `OPENAI_BASE_URL`. Set the ASR-specific fields when
-translation and transcription use different providers or keys.
+可通过界面「设置」配置翻译引擎/ASR模型/API Key，无需手动编辑配置文件。配置保存到 `config/desktop-settings.local.json`（被 Git 忽略）。
 
-Set `AI_INTERPRETER_DESKTOP_ASR_PROFILE=env` to use the ASR values from
-`backend/.env.local` exactly. Set it to `light`, `cpu`, or `gpu` only when you
-want local Whisper; those local profiles may load or download model files on
-first use.
+### 桌面模式（Electron）
 
-## Desktop-Style Startup (Optional)
+**Windows：** 双击 `start-desktop.cmd` 启动 Electron 桌面端，支持透明悬浮字幕窗（always-on-top）。
 
-Use this path only when you specifically need the Electron transparent floating
-subtitle overlay. On Windows, double-click `start-desktop.cmd` from the project
-root. The launcher:
+- 单实例 + 托盘 + 最小化到托盘
+- 悬浮字幕窗在其他应用之上显示
+- 设置面板持久化配置
 
-1. Builds the Vite frontend when needed.
-2. Serves the built frontend from a local static server.
-3. Starts the FastAPI backend from `backend/.venv` when the requested backend
-   port is not already healthy.
-4. Opens the UI in an Electron `BrowserWindow`, not in a browser app-mode tab.
-5. Opens a transparent always-on-top subtitle overlay window for desktop-style
-   viewing over other apps and browser tabs.
-6. Keeps a single app instance, supports tray restore, minimize-to-tray,
-   floating-subtitle show/hide, and startup-log menu behavior.
-7. Stops the services it started when the app window exits.
+### Tauri 桌面端
 
-In desktop mode, use the main window as the control panel. Live subtitles appear
-in the floating overlay near the bottom of the screen, not only inside the main
-window. The control panel button `Floating subtitles on/off` and the tray menu
-can hide or restore the overlay without stopping the translation session.
-
-Use `Settings` / `设置` in the control window to configure the local app
-without editing secret files by hand. The panel can save:
-
-- Interface language: Chinese or English.
-- OpenAI-compatible translation engine, model, base URL, and API key.
-- OpenAI-compatible ASR transcription model, base URL, and API key for
-  `/audio/transcriptions` providers such as the official `whisper-1` API.
-- Anthropic API key for Claude-compatible use.
-- Desktop ASR profile (`remote`, `light`, `cpu`, `gpu`, or `env`).
-- Default source language for new sessions.
-
-Real values are written to `config/desktop-settings.local.json`, which is
-ignored by Git. The tracked `config/desktop-settings.example.json` file is the
-GitHub-safe template with the same shape and no real key. The renderer only
-receives whether a saved key exists; it does not display the stored key value.
-
-Backend-affecting settings such as translation engine, model, API key, base URL,
-ASR model/API key/base URL, and ASR profile are read by the Python launcher when
-the backend starts, so restart the local launcher after saving them. Interface
-language changes apply in the frontend immediately after saving.
-
-Startup logs are written to `logs/desktop-launcher.log`. If port `8000` is
-occupied by an unhealthy or stale process, the launcher chooses another local
-backend port and injects the matching WebSocket URL into the Electron window.
-Override paths, ports, or ASR profile with `AI_INTERPRETER_PYTHON`,
-`AI_INTERPRETER_BACKEND_PORT`, `AI_INTERPRETER_FRONTEND_PORT`, or
-`AI_INTERPRETER_DESKTOP_ASR_PROFILE` when needed.
-
-Desktop startup defaults to the remote ASR profile:
-
-```text
-ASR_ENGINE=openai
-ASR_OPENAI_MODEL=whisper-1
-ASR_OPENAI_BASE_URL=https://api.openai.com/v1
-ASR_OPENAI_API_KEY=<your-transcription-api-key>
-```
-
-Set `AI_INTERPRETER_DESKTOP_ASR_PROFILE=env` to use the ASR values from
-`backend/.env.local` exactly. Set it to `light`, `cpu`, or `gpu` only when you
-want local Whisper; those local profiles may load or download model files on
-first use.
-
-To create a Windows desktop shortcut, run:
-
-```powershell
-.\install-desktop-shortcut.cmd
-```
-
-The shortcut starts `start-desktop.ps1` through a hidden PowerShell process and opens the Electron desktop window.
-
-## Reliability Baseline Tool
-
-Before running a 30-60 minute baseline, keep secrets in the local-only
-`backend/.env.local` file. The tracked `backend/.env.example` file is the GitHub
-template; do not put real keys there.
-
-```powershell
-if (!(Test-Path backend/.env.local)) { Copy-Item backend/.env.example backend/.env.local }
-```
-
-Then edit `backend/.env.local` and configure Redis, remote ASR or local Whisper,
-and one translation provider key:
-
-- `REDIS_URL` and `REDIS_PROTOCOL`.
-- Remote ASR: `ASR_ENGINE=openai`, `ASR_OPENAI_MODEL=whisper-1`,
-  `ASR_OPENAI_BASE_URL=https://api.openai.com/v1`, and
-  `ASR_OPENAI_API_KEY`.
-- Optional local Whisper: `ASR_ENGINE=whisper`, `WHISPER_MODEL`,
-  `WHISPER_DEVICE`, and `WHISPER_COMPUTE_TYPE`.
-- `ANTHROPIC_API_KEY` for `NMT_ENGINE=claude`, or `OPENAI_API_KEY` for
-  `NMT_ENGINE=openai`.
-
-The backend and endurance preflight load `backend/.env.local` automatically
-from explicit project paths, so the same file works when commands are run from
-the repository root or from the `backend` directory. Real environment variables
-still override file values when both are set.
-
-For repeatable project-level validation, run the interpreter validation suite.
-By default it runs the secret-safe preflight and writes a combined report:
+双击 `start-tauri.cmd` 或运行：
 
 ```bash
+python tools/desktop_launcher.py --build --mode tauri
+```
+
+安装包约 **10-20MB**，远小于 Electron。支持托盘、单实例、透明悬浮字幕窗、实验性系统音频采集（`--features system-audio`）。
+
+### 音频源选择
+
+| 音频源 | 说明 |
+|--------|------|
+| 🎤 **麦克风** | `getUserMedia` 采集，带回声消除/降噪/自动增益 |
+| 📺 **标签页/窗口** | `getDisplayMedia` 共享屏幕时勾选分享音频 |
+| 💻 **系统音频 (Tauri)** | loopback 采集（需 `--features system-audio` 构建） |
+| 📁 **音频文件** | WAV/MP3/OGG/FLAC 本地文件，按实时节奏逐句翻译 |
+
+---
+
+## 翻译管线
+
+```
+┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐
+│ 音频采集 │ → │   VAD   │ → │   ASR   │ → │   NMT   │ → │ 字幕/TTS │
+│ 四源输入 │    │ 句子切分 │    │ 语音识别 │    │ 翻译引擎 │    │ 双通道输出 │
+└─────────┘    └─────────┘    └─────────┘    └─────────┘    └─────────┘
+                                     ↓              ↓
+                              ┌─────────┐    ┌─────────┐
+                              │ 修正引擎 │    │ 术语库  │
+                              │ 智能修正 │    │ 记忆库  │
+                              └─────────┘    └─────────┘
+```
+
+### 关键设计
+
+- **ASR 回调不阻塞翻译**：翻译与修正后台异步化，带并发信号量、优雅停关与乱序保护
+- **上下文窗口分层**：近 3 句原文 + 更早句压缩，input token 预估降 **60%**
+- **自适应 VAD 切分**：Silero VAD + 时长约束，不切碎句子
+- **智能降级**：NMT 失败指数退避重试，最终降级为原文透传保证字幕不断流
+- **音频采集静音丢弃**：RMS 阈值，节省 **30-40%** 带宽与 ASR 调用
+
+---
+
+## 功能全景
+
+| 模块 | 状态 | 说明 |
+|------|:---:|------|
+| 实时音频采集 | ✅ | AudioWorklet + ScriptProcessor 双通道 |
+| 实时翻译管线 | ✅ | 流式 ASR → 翻译 → 字幕 |
+| 智能修正引擎 | ✅ | 置信度/停顿/句数规则 + 手动修正 |
+| 双语字幕 | ✅ | 原文+译文双语展示，虚拟滚动 |
+| 流式 TTS | ✅ | 边翻译边合成，修正智能播报 |
+| 说话人分离 | ✅ | 按段标注，前端着色（默认关闭） |
+| 翻译记忆库 | ✅ | 跨会话持久化，LCS+Jaccard 索引 |
+| 术语库管理 | ✅ | ASR 热词注入 + NMT 约束双通道 |
+| 多人协作翻译 | ✅ | 房间式实时协作修正 |
+| 会话历史管理 | ✅ | 质量指标落盘，TTL 自动清理 |
+| 订阅与配额 | ✅ | 4 档套餐 + 每日句数计量 |
+| 成本估算 | ✅ | 实时计量 token/音频/字符成本 |
+| 学习摘要 | ✅ | 本地统计 + LLM 增强双模式 |
+| 字幕样式配置 | ✅ | 字号/颜色/位置 CSS 变量驱动 |
+| 离线 PWA | ✅ | Service Worker 壳缓存 + 离线兜底 |
+| 内置终端 | ✅ | xterm.js + WebSocket PTY 桥接 |
+| 全局快捷键 | ✅ | Ctrl+Space / Ctrl+1 / Ctrl+H |
+| 会话导出 | ✅ | SRT/VTT/TXT/MD/ZIP 多格式 |
+| 数字/专名稳定 | ✅ | ASR 规范化 + NMT 提示词规则 |
+| 修正历史时间线 | ✅ | 类型/来源/触发方式/耗时可视化 |
+| 字幕搜索与高亮 | ✅ | 大小写不敏感 + 关键词高亮 |
+| 翻译风格控制 | ✅ | 简洁 / 忠实 / 讲义式 |
+
+---
+
+## 技术架构
+
+### 前端 (React + Vite + TypeScript)
+
+- **UI 设计**：Awwwards 级深空黑 + 极光渐变设计系统，弹簧动效、玻璃拟态面板
+- **图标**：统一使用 **Lucide**，界面零 emoji
+- **状态管理**：Zustand + SubtitleStore 单向数据流
+- **性能**：所有面板 React.lazy 按需加载，首屏 JS 减少约 10%；Vite 手动分包
+- **桌面适配**：Electron / Tauri v2 双路线，支持透明悬浮字幕窗
+- **PWA 离线**：Service Worker 壳缓存 + 运行时缓存 + 离线兜底
+
+### 后端 (Python + FastAPI)
+
+- **ASR 引擎**：faster-whisper（本地）/ OpenAI 兼容（whisper-1 等）
+- **翻译引擎**：OpenAI / Claude 兼容 chat completions 接口
+- **TTS 引擎**：edge-tts（免费）/ OpenAI 兼容
+- **会话存储**：本地 JSON 持久化 + Redis（可选）
+- **安全**：默认仅监听 `127.0.0.1`、CORS 白名单、WebSocket Origin 校验、强会话 ID（192-bit 随机）、重连令牌
+
+### 质量保障
+
+| 指标 | 数据 |
+|------|------|
+| 后端单元测试 | **376** 通过 + 1 跳过 |
+| 前端单元测试 | **208** 通过 |
+| E2E 端到端测试 | **7** 条关键用户流程 (Playwright) |
+| CI 矩阵 | Python 3.10 / 3.11 / 3.12 |
+| 依赖安全审计 | npm audit + pip-audit（high/critical 阻断） |
+| 质量回归 | BLEU + WER/CER 自动对比基线 |
+| 静态检查 | ruff + tsc 全绿 |
+| 30 分钟耐力跑 | 接收比 100%、0 丢弃/重连/乱序 |
+
+---
+
+## 项目结构
+
+```
+├── frontend/           # React + Vite + TypeScript 前端
+│   ├── src/
+│   │   ├── audio/      # 音频采集与播放（AudioSourceManager）
+│   │   ├── subtitle/   # 字幕渲染/存储/导出/搜索/样式
+│   │   ├── network/    # WebSocket 客户端
+│   │   ├── ui/         # 控制面板/设置面板/各功能面板
+│   │   ├── desktop/    # Electron/Tauri 桌面适配
+│   │   └── export/     # 会话产物导出 (ZIP/SRT/VTT/MD)
+│   └── src-tauri/      # Tauri Rust 侧工程
+├── backend/            # Python FastAPI 后端
+│   ├── api/            # REST/WebSocket 端点
+│   ├── services/       # 核心业务服务（ASR/NMT/TTS/修正等）
+│   ├── core/           # 配置与工具
+│   └── models/         # 数据模型
+├── docs/               # 文档与截图
+├── tests/              # 测试与夹具（含音频 fixture）
+├── tools/              # 工具脚本（启动/验证/评测）
+└── config/             # 配置文件模板
+```
+
+---
+
+## 相关文档
+
+- [部署指南](docs/DEPLOYMENT.md) — 环境准备、配置、部署形态、安全基线、成本控制
+- [Tauri 桌面端](docs/TAURI_DESKTOP.md) — Tauri 构建/运行指南
+- [性能基线](docs/PERFORMANCE_BASELINE.md) — 耐力跑测试结果与性能指标
+- [隐私说明](PRIVACY.md) — 数据类别、去向与本地化建议
+
+---
+
+## 开发与贡献
+
+### 本地开发
+
+```bash
+# 前端
+cd frontend
+npm install
+npm run dev
+
+# 后端
+cd backend
+pip install -r requirements.lock.txt
+uvicorn main:app --reload --host 127.0.0.1 --port 8000
+```
+
+### 验证
+
+```bash
+# 前端测试
+cd frontend && npm test
+
+# 后端测试
+cd backend && python -m unittest discover backend
+
+# E2E 测试
+cd frontend && npm run e2e
+
+# 质量回归
+python tools/quality_regression.py
+
+# 完整验证套件
 python tools/interpreter_validation_suite.py --output reports/interpreter-validation-latest.json
 ```
 
-When the backend is running and preflight is ready, include the endurance run
-and thresholds in the same report:
+### 提交规范
 
-```bash
-python tools/interpreter_validation_suite.py --run-endurance --duration-seconds 1800 --monitor-self --monitor-pid backend=<uvicorn_pid> --max-memory-growth-mb 150 --max-dropped-chunks 0 --max-queue-depth 8 --min-received-ratio 0.99 --max-subtitle-order-violations 0 --output reports/interpreter-validation-30m.json
-```
+使用 [Conventional Commits](https://www.conventionalcommits.org/) 规范提交：
+- `feat: 新增功能`
+- `fix: 修复问题`
+- `docs: 更新文档`
+- `refactor: 重构代码`
 
-After exporting session artifacts, pass them to the same suite so the final
-report includes subtitle usability evidence:
+---
 
-```bash
-python tools/interpreter_validation_suite.py --artifact exports/session.txt --artifact exports/session.srt --artifact exports/session.vtt --artifact exports/session.md --output reports/interpreter-validation-artifacts.json
-```
+<div align="center">
 
-The suite writes child reports for preflight, endurance, and artifact validation
-under `reports/` and exits non-zero when an executed step is blocked or failed.
+**MIT License** | 如有问题请提交 [Issue](https://github.com/nangongdao/competition2/issues)
 
-Run the secret-safe preflight first:
-
-```bash
-python tools/endurance_preflight.py --output reports/endurance-preflight-latest.json
-```
-
-The tracked template and built-in defaults use `WHISPER_MODEL=small`,
-`WHISPER_DEVICE=cpu`, and `WHISPER_COMPUTE_TYPE=int8` for first-run reliability.
-For higher accuracy on a GPU machine, set `WHISPER_MODEL=large-v3`,
-`WHISPER_DEVICE=cuda`, and `WHISPER_COMPUTE_TYPE=float16`. To verify the actual
-Whisper model load during preflight, add `--load-whisper-model`; this may
-download model files.
-
-Run the backend, then use the local endurance runner to send paced 16 kHz mono
-float32 PCM chunks and capture a diagnostics report:
-
-```bash
-python tools/endurance_runner.py --duration-seconds 1800 --source silence --output reports/endurance-30m.json --max-dropped-chunks 0 --max-queue-depth 8 --min-received-ratio 0.99 --max-subtitle-order-violations 0
-```
-
-To include memory-growth evidence, pass the runner process and any backend
-process PIDs you want to watch:
-
-```bash
-python tools/endurance_runner.py --duration-seconds 1800 --source silence --output reports/endurance-30m.json --monitor-self --monitor-pid backend=<uvicorn_pid> --memory-sample-interval-seconds 5 --max-memory-growth-mb 150 --max-dropped-chunks 0 --max-queue-depth 8 --min-received-ratio 0.99 --max-subtitle-order-violations 0
-```
-
-For speech-like validation, provide a 16 kHz mono PCM WAV file:
-
-```bash
-python tools/endurance_runner.py --duration-seconds 3600 --wav path/to/sample.wav --manual-revision-interval-seconds 300 --output reports/endurance-60m.json
-```
-
-After a real session, validate exported subtitle artifacts:
-
-```bash
-python tools/subtitle_artifact_validator.py exports/session.txt exports/session.srt exports/session.vtt exports/session.md --output reports/subtitle-artifacts-latest.json
-```
-
-The artifact validator reports cue counts, timestamp overlaps, long gaps,
-revision markers, empty artifacts, transcript line counts, and Markdown timeline
-readability.
-
-## Iteration Workflow
-
-Each completed upgrade or feature must leave a meaningful commit record and be submitted through a Pull Request.
-
-Required workflow:
-
-1. Commit the finished upgrade or feature with a meaningful Conventional Commit message, such as `feat: 完成用户登录模块`, `fix: 修复数据展示错误`, or `docs: 更新项目提交和 PR 流程`.
-2. Push the branch to `https://github.com/nangongdao/competition2`.
-3. Open a Pull Request according to the activity guidance for the repository.
-4. In the PR description, summarize the day's progress, validation commands, and any remaining risks or follow-up work.
-
-Keep each PR focused on one upgrade or feature whenever possible, and avoid including unrelated local changes.
+</div>

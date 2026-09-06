@@ -14,6 +14,14 @@
   },
   "runtime": {
     "asrProfile": "remote",
-    "sourceLanguage": "en"
+    "sourceLanguage": "en",
+    "targetLanguage": "zh-CN"
+  },
+  "subtitleStyle": {
+    "fontSize": 22,
+    "fontColor": "#ffffff",
+    "backgroundColor": "#0a0e16",
+    "backgroundOpacity": 0.78,
+    "position": "bottom"
   }
 }
