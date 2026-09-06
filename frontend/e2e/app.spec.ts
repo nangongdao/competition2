@@ -48,8 +48,10 @@ test.describe('应用加载与控制面板', () => {
     // 关键控件存在
     await expect(page.getByLabel('源语言')).toBeVisible()
     await expect(page.getByLabel('目标语言')).toBeVisible()
-    // 开始翻译按钮
-    await expect(page.getByRole('button', { name: '开始翻译' })).toBeVisible()
+    // 开始翻译按钮（控制面板内；空状态引导区亦有同文案按钮，需限定范围）
+    await expect(
+      page.getByRole('complementary', { name: '实时翻译控制' }).getByRole('button', { name: '开始翻译' }),
+    ).toBeVisible()
   })
 
   test('切换源/目标语言与翻译风格', async ({ page }) => {
@@ -171,7 +173,10 @@ test.describe('字幕渲染（mock WebSocket）', () => {
 
     await page.goto('/')
     // 点击开始翻译建立 WS 连接并收到桩字幕。
-    await page.getByRole('button', { name: '开始翻译' }).click()
+    await page
+      .getByRole('complementary', { name: '实时翻译控制' })
+      .getByRole('button', { name: '开始翻译' })
+      .click()
 
     // 源字幕渲染
     await expect(page.locator('.subtitle-source').first()).toContainText('Hello world', {

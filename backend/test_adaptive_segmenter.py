@@ -159,8 +159,6 @@ class AdaptiveSegmenterTests(unittest.TestCase):
         - 超 max_sentence 强制切分。
         """
         min_speech = int(self.sample_rate * 0.25)
-        max_sentence = int(self.sample_rate * 2.0)
-        silence = int(self.sample_rate * 0.5)
 
         segmenter = AdaptiveSegmenter(
             sample_rate=self.sample_rate,
